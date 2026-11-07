@@ -5,12 +5,6 @@ import { defineConfig, type Plugin } from 'vite'
 
 const ARTIFACTS_DIR = resolve(import.meta.dirname, '../artifacts')
 
-// Cross-origin isolation lets ONNX Runtime use multi-threaded WASM (SharedArrayBuffer).
-const isolationHeaders = {
-  'Cross-Origin-Opener-Policy': 'same-origin',
-  'Cross-Origin-Embedder-Policy': 'require-corp',
-}
-
 const MIME: Record<string, string> = {
   '.json': 'application/json',
   '.onnx': 'application/octet-stream',
@@ -20,8 +14,11 @@ const MIME: Record<string, string> = {
 /** Serves ../artifacts at /artifacts during development, so research outputs never get copied into web/. */
 function serveArtifacts(): Plugin {
   const handler = (req: { url?: string }, res: import('node:http').ServerResponse, next: () => void) => {
-    if (!req.url?.startsWith('/artifacts/')) return next()
-    const rel = normalize(decodeURIComponent(req.url.split('?')[0].slice('/artifacts/'.length)))
+    // Works with or without the /<base>/ prefix.
+    const path = decodeURIComponent(req.url?.split('?')[0] ?? '')
+    const at = path.indexOf('/artifacts/')
+    if (at < 0) return next()
+    const rel = normalize(path.slice(at + '/artifacts/'.length))
     const file = join(ARTIFACTS_DIR, rel)
     if (!file.startsWith(ARTIFACTS_DIR) || !existsSync(file) || !statSync(file).isFile()) {
       res.statusCode = 404
@@ -29,7 +26,6 @@ function serveArtifacts(): Plugin {
     }
     res.setHeader('Content-Type', MIME[extname(file)] ?? 'application/octet-stream')
     res.setHeader('Content-Length', statSync(file).size)
-    res.setHeader('Cross-Origin-Resource-Policy', 'same-origin')
     createReadStream(file).pipe(res)
   }
   return {
@@ -41,8 +37,9 @@ function serveArtifacts(): Plugin {
 
 export default defineConfig({
   plugins: [react(), serveArtifacts()],
-  server: { headers: isolationHeaders },
-  preview: { headers: isolationHeaders },
+  // GitHub Pages serves the site from /<repo>/, so the build sets VITE_BASE=/Prizma/.
+  // Pages cannot send COOP/COEP headers, so the site does not rely on cross-origin isolation.
+  base: process.env.VITE_BASE ?? '/',
   // onnxruntime-web locates its .wasm files relative to its own module; pre-bundling breaks that.
   optimizeDeps: { exclude: ['onnxruntime-web'] },
   worker: { format: 'es' },

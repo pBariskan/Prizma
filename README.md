@@ -57,6 +57,13 @@ produce a tiny random model for checking the pipeline (`/?model=gpt2-random-tiny
 
 Tests: `uv run --group dev pytest` in `research/`, `npm test` in `web/`.
 
+## Deployment
+
+The site is deployed to GitHub Pages on every push to `main` (enable it once under
+*Settings → Pages → Source: GitHub Actions*). The ~220 MB of model files are hosted separately,
+for example in a Hugging Face dataset; point the site at them with the `ARTIFACTS_URL` repository
+variable (*Settings → Secrets and variables → Actions → Variables*).
+
 ## Roadmap
 
 | Phase | Content | Status |

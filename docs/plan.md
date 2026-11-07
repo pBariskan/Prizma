@@ -76,7 +76,7 @@ website that consumes its outputs. All computation happens in the visitor's brow
 ### Frontend
 
 - React + Vite + TypeScript, static build. The model runs in a Web Worker.
-- D3 for attention lines and charts. Hosting on Vercel or Cloudflare Pages.
+- D3 for attention lines and charts. Hosting on GitHub Pages (decided 2026-11-07; the plan originally said Vercel or Cloudflare Pages).
 
 ## Roadmap
 
@@ -97,7 +97,7 @@ Most important rule: no new features until Phase 2 ships a live version.
 | --- | --- |
 | Rented GPU (SAE training + example collection, a few attempts) | $10-40 |
 | Claude Haiku labelling + scoring of 16k concepts (Batch API) | $20-50 |
-| Hosting (Vercel / Cloudflare Pages + R2) | free tier |
+| Hosting (GitHub Pages + a Hugging Face dataset for model files) | free |
 | Domain (optional) | $10-15 / year |
 
 ## Risks

@@ -2,6 +2,15 @@
 
 Short records of choices that are not obvious from the code. Newest first.
 
+## 2026-11-07: Hosting on GitHub Pages
+
+The site is deployed to GitHub Pages by `.github/workflows/pages.yml` on every push to `main`
+(served from `/Prizma/`, set through `VITE_BASE`). Pages cannot send custom headers, so the site
+does not use cross-origin isolation (COOP/COEP); this costs nothing today because WASM already
+runs single-threaded. The model files do not go into the repo or the Pages build (Pages has a
+100 MB per-file limit and they are research outputs): they are served from a CDN set through the
+`ARTIFACTS_URL` repository variable, e.g. a Hugging Face dataset, which sends CORS headers.
+
 ## 2026-11-07: Phase 0 prototype
 
 **English only.** All code, UI and docs are in English; there is no i18n layer. The optional

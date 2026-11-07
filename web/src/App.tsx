@@ -3,7 +3,7 @@ import { ModelClient } from './engine/client'
 import type { Backend, GeneratedToken, Manifest, SteeringFile } from './engine/protocol'
 import { TokenStream } from './views/TokenStream'
 
-const ARTIFACTS_URL = import.meta.env.VITE_ARTIFACTS_URL ?? '/artifacts/models'
+const ARTIFACTS_URL = import.meta.env.VITE_ARTIFACTS_URL || `${import.meta.env.BASE_URL}artifacts/models`
 const params = new URLSearchParams(location.search)
 const MODEL = params.get('model') ?? import.meta.env.VITE_DEFAULT_MODEL ?? 'gpt2-l6'
 // ?backend=wasm or ?backend=webgpu forces an execution provider (handy for comparing them).

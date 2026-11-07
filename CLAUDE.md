@@ -63,6 +63,13 @@ npm run build
 
 URL parameters: `model`, `prompt`, `vector`, `strength`, `backend=webgpu|wasm`.
 
+## Hosting
+
+GitHub Pages, deployed by `.github/workflows/pages.yml` on every push to `main` (base path
+`/Prizma/`). No custom headers are possible there, so nothing may depend on cross-origin isolation.
+Model files come from a CDN set in the `ARTIFACTS_URL` repository variable (e.g.
+`https://huggingface.co/datasets/<user>/prizma-artifacts/resolve/main/models`), never from the repo.
+
 ## Conventions
 
 - Python: plain PyTorch for the exported graph (`research/prizma_research/gpt2_split.py`), so the
