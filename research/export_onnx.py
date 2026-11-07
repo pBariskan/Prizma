@@ -5,7 +5,8 @@
     uv run python export_onnx.py --random --tiny      # tiny random model, no download (for tests)
 
 Writes to ``artifacts/models/<name>/``:
-    part_a.onnx     input_ids -> resid, attn
+    embeddings.f16.bin  token-embedding table [vocab, d_model], raw little-endian fp16
+    part_a.onnx     tok_embeds -> resid, attn
     part_b.onnx     resid -> last_logits, topk_probs, topk_ids, attn
     manifest.json   shapes, split layer, file names; the contract the web engine reads
 """
@@ -21,7 +22,6 @@ import numpy as np
 import onnx
 import onnxruntime as ort
 import torch
-from onnx import helper, numpy_helper
 
 from prizma_research.gpt2_split import GPT2, GPT2Config, PartA, PartB
 
@@ -60,31 +60,15 @@ def export_part(module: torch.nn.Module, example: torch.Tensor, path: Path, inpu
     )
 
 
-def embedding_to_fp16(path: Path) -> None:
-    """Store the token-embedding table of part A in fp16 (halves its size).
+def write_embeddings(gpt: GPT2, path: Path) -> None:
+    """Token-embedding table as raw little-endian fp16, shape [vocab, d_model]."""
+    path.write_bytes(gpt.wte.weight.detach().numpy().astype("<f2").tobytes())
 
-    The Gather node that reads the [vocab, d] initializer is rewired to read an fp16 copy,
-    followed by a Cast back to fp32, so the rest of the graph is unchanged.
-    """
-    model = onnx.load(str(path))
-    inits = {i.name: i for i in model.graph.initializer}
-    new_nodes = []
-    for node in model.graph.node:
-        new_nodes.append(node)
-        if node.op_type != "Gather" or node.input[0] not in inits:
-            continue
-        table = inits[node.input[0]]
-        if len(table.dims) != 2 or table.dims[0] < 1000:
-            continue  # only the vocab table, not the small position table
-        arr = numpy_helper.to_array(table).astype(np.float16)
-        table.CopyFrom(numpy_helper.from_array(arr, table.name))
-        out = node.output[0]
-        node.output[0] = out + "_fp16"
-        new_nodes.append(helper.make_node("Cast", [out + "_fp16"], [out], to=onnx.TensorProto.FLOAT,
-                                          name=node.name + "_cast"))
-    del model.graph.node[:]
-    model.graph.node.extend(new_nodes)
-    onnx.save(model, str(path))
+
+def lookup(path: Path, ids: np.ndarray, d_model: int) -> np.ndarray:
+    """What the browser does: read rows of the fp16 table and widen them to fp32."""
+    table = np.frombuffer(path.read_bytes(), dtype="<f2").reshape(-1, d_model)
+    return table[ids].astype(np.float32)
 
 
 def quantize(path: Path, bits: int) -> None:
@@ -110,7 +94,8 @@ def verify(gpt: GPT2, hf, out_dir: Path, split: int, top_k: int) -> dict:
 
     sa = ort.InferenceSession(str(out_dir / "part_a.onnx"))
     sb = ort.InferenceSession(str(out_dir / "part_b.onnx"))
-    resid, attn_a = sa.run(None, {"input_ids": ids.numpy().astype(np.int64)})
+    embeds = lookup(out_dir / "embeddings.f16.bin", ids.numpy(), gpt.cfg.n_embd)
+    resid, attn_a = sa.run(None, {"tok_embeds": embeds})
     last_logits, topk_probs, topk_ids, attn_b = sb.run(None, {"resid": resid})
 
     report = {
@@ -150,11 +135,11 @@ def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     T = 8
-    ids = torch.zeros(1, T, dtype=torch.long)
     resid = torch.zeros(1, T, cfg.n_embd)
     print(f"Exporting {name}: split at layer {split} of {cfg.n_layer}")
-    export_part(PartA(gpt, split), ids, out_dir / "part_a.onnx", "input_ids", ["resid", "attn"],
-                {"input_ids": {1: "T"}, "resid": {1: "T"}, "attn": {3: "T", 4: "T"}})
+    write_embeddings(gpt, out_dir / "embeddings.f16.bin")
+    export_part(PartA(gpt, split), resid, out_dir / "part_a.onnx", "tok_embeds", ["resid", "attn"],
+                {"tok_embeds": {1: "T"}, "resid": {1: "T"}, "attn": {3: "T", 4: "T"}})
     export_part(PartB(gpt, split, args.top_k), resid, out_dir / "part_b.onnx", "resid",
                 ["last_logits", "topk_probs", "topk_ids", "attn"],
                 {"resid": {1: "T"}, "topk_probs": {1: "T"}, "topk_ids": {1: "T"}, "attn": {3: "T", 4: "T"}})
@@ -163,7 +148,6 @@ def main() -> int:
     report = {"fp32": verify(gpt, hf, out_dir, split, args.top_k)}
     print("fp32 check:", json.dumps(report["fp32"]))
 
-    embedding_to_fp16(out_dir / "part_a.onnx")
     if args.quantize != "none":
         bits = 8 if args.quantize == "q8" else 4
         quantize(out_dir / "part_a.onnx", bits)
@@ -171,7 +155,7 @@ def main() -> int:
     report["final"] = verify(gpt, hf, out_dir, split, args.top_k)
     print(f"{args.quantize} check:", json.dumps(report["final"]))
 
-    sizes = {p.name: p.stat().st_size for p in out_dir.glob("*.onnx")}
+    sizes = {p.name: p.stat().st_size for p in [*out_dir.glob("*.onnx"), out_dir / "embeddings.f16.bin"]}
     manifest = {
         "name": name,
         "source": "random" if args.random else args.model,
@@ -184,7 +168,7 @@ def main() -> int:
         "n_positions": cfg.n_positions,
         "top_k": args.top_k,
         "quantization": args.quantize,
-        "files": {"part_a": "part_a.onnx", "part_b": "part_b.onnx"},
+        "files": {"embeddings": "embeddings.f16.bin", "part_a": "part_a.onnx", "part_b": "part_b.onnx"},
         "bytes": sizes,
         "verification": report,
     }

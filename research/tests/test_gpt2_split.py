@@ -23,7 +23,7 @@ def test_full_forward_matches_hf():
 def test_split_equals_full_and_steering_changes_output():
     hf, gpt = tiny_models()
     ids = torch.randint(0, 50257, (1, 10))
-    resid, attn_a = PartA(gpt, 2)(ids)
+    resid, attn_a = PartA(gpt, 2)(gpt.wte(ids))
     last, topk_p, topk_i, attn_b = PartB(gpt, 2)(resid)
     assert torch.allclose(last, hf(ids).logits[:, -1], atol=1e-4)
     assert attn_a.shape == (1, 2, 4, 10, 10) and attn_b.shape == (1, 2, 4, 10, 10)

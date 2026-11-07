@@ -1,6 +1,6 @@
 """A minimal, explicit GPT-2 forward pass split into two halves at a chosen layer.
 
-Part A: token ids -> residual stream entering block `split_layer` (``blocks.{L}.hook_resid_pre``)
+Part A: token embeddings -> residual stream entering block `split_layer` (``blocks.{L}.hook_resid_pre``)
         plus the attention patterns of blocks [0, L).
 Part B: residual stream -> next-token logits for the last position, top-k predictions for
         every position, plus the attention patterns of blocks [L, n_layer).
@@ -125,9 +125,12 @@ class GPT2(nn.Module):
         return model.eval()
 
     def embed(self, input_ids: torch.Tensor) -> torch.Tensor:
-        T = input_ids.shape[1]
-        pos = torch.arange(T, device=input_ids.device).unsqueeze(0)
-        return self.wte(input_ids) + self.wpe(pos)
+        return self.add_positions(self.wte(input_ids))
+
+    def add_positions(self, tok_embeds: torch.Tensor) -> torch.Tensor:
+        T = tok_embeds.shape[1]
+        pos = torch.arange(T, device=tok_embeds.device).unsqueeze(0)
+        return tok_embeds + self.wpe(pos)
 
     def run_blocks(self, x: torch.Tensor, start: int, end: int) -> tuple[torch.Tensor, torch.Tensor]:
         """Run blocks [start, end). Returns (x, attn [B, end-start, H, T, T])."""
@@ -146,15 +149,20 @@ class GPT2(nn.Module):
 
 
 class PartA(nn.Module):
-    """input_ids [1, T] -> resid [1, T, D], attn [1, L, H, T, T]."""
+    """tok_embeds [1, T, D] -> resid [1, T, D], attn [1, L, H, T, T].
+
+    The token-embedding lookup itself happens outside the graph (the browser reads rows from an
+    fp16 table), because fp16 Gather is not supported on every WebGPU device and an fp32 table
+    would add ~150 MB to the download.
+    """
 
     def __init__(self, gpt: GPT2, split_layer: int):
         super().__init__()
         self.gpt = gpt
         self.split_layer = split_layer
 
-    def forward(self, input_ids: torch.Tensor):
-        return self.gpt.run_blocks(self.gpt.embed(input_ids), 0, self.split_layer)
+    def forward(self, tok_embeds: torch.Tensor):
+        return self.gpt.run_blocks(self.gpt.add_positions(tok_embeds), 0, self.split_layer)
 
 
 class PartB(nn.Module):
