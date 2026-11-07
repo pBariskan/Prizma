@@ -2,3 +2,16 @@
 node_modules/
 .env
 .env.*
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Research outputs: published to a CDN, never committed
+artifacts/*
+!artifacts/README.md
+
+# Web
+web/dist/
