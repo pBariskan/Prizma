@@ -38,7 +38,8 @@ const HOME = (() => {
     const value = query.get(key)
     if (value !== null) keep.set(key, value)
   }
-  return `${location.pathname}${keep.size > 0 ? `?${keep}` : ''}`
+  const search = keep.toString()
+  return `${location.pathname}${search ? `?${search}` : ''}`
 })()
 
 /** Where each view that looks inside one text leads next. */

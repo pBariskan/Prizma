@@ -113,6 +113,8 @@ button:disabled { cursor: default; }
   line-height: 1.04; letter-spacing: -0.025em; max-width: 12.5em; text-wrap: balance;
 }
 .hero h1 em {
+  /* The first gradient is for browsers that cannot interpolate in oklch; without any, the word would be invisible. */
+  background: linear-gradient(100deg, var(--next), var(--steer) 38%, var(--concepts) 68%, var(--attention));
   background: linear-gradient(100deg in oklch, var(--next), var(--steer) 38%, var(--concepts) 68%, var(--attention));
   -webkit-background-clip: text; background-clip: text; color: transparent; padding-right: 0.06em;
 }
@@ -198,7 +200,9 @@ button:disabled { cursor: default; }
 .loading-bar { height: 4px; border-radius: 2px; background: var(--wash); overflow: hidden; margin-bottom: 10px; }
 .loading-bar span {
   display: block; height: 100%; border-radius: 2px; transition: width 0.3s ease-out;
-  background: linear-gradient(90deg in oklch, var(--next), var(--steer), var(--concepts), var(--attention)); background-size: 100vw 100%;
+  background: linear-gradient(90deg, var(--next), var(--steer), var(--concepts), var(--attention));
+  background: linear-gradient(90deg in oklch, var(--next), var(--steer), var(--concepts), var(--attention));
+  background-size: 100vw 100%;
 }
 
 /* The four views */
@@ -260,7 +264,7 @@ button:disabled { cursor: default; }
 .nl { font-family: var(--sans); font-size: 0.55em; color: var(--ink-3); margin-left: 3px; vertical-align: 0.2em; letter-spacing: 1px; }
 .token:hover .word, .token:focus-visible .word, .token.focus .word { background: color-mix(in srgb, var(--lens) 16%, transparent); color: var(--ink); }
 .token.tinted:hover .word, .token.tinted.focus .word { background: color-mix(in srgb, var(--lens) calc(16% + var(--tint) * 45%), transparent); }
-.token.selected .word { box-shadow: inset 0 -2px 0 var(--lens); color: var(--ink); }
+.token.selected .word { box-shadow: inset 0 -2px 0 var(--lens); border-radius: 5px 5px 1px 1px; color: var(--ink); }
 .token.bos.selected .word { box-shadow: none; border-color: var(--lens); color: var(--lens); }
 .caret { display: inline-block; width: 0.45em; height: 0.95em; margin-left: 3px; vertical-align: -0.1em; background: var(--lens); opacity: 0.7; animation: blink 1s steps(2) infinite; }
 @keyframes blink { to { opacity: 0; } }

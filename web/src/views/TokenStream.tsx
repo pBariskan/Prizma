@@ -98,7 +98,11 @@ export function TokenStream({
             onFocus={(e) => enter(pos, e.currentTarget)}
             onBlur={leaveText}
           >
-            {token.kind === 'bos' ? <span className="word">start</span> : <TokenBody text={token.text} />}
+            {token.kind === 'bos' ? (
+              <span className="word">start</span>
+            ) : (
+              <TokenBody text={token.text} joinsBreak={run.tokens[pos + 1]?.text.startsWith('\n') ?? false} />
+            )}
             {tip?.pos === pos && candidates && (
               <span className="tooltip" role="tooltip" style={{ left: tip.shift, width: TOOLTIP_WIDTH }}>
                 <span className="tooltip-title">The model's top {candidates.length} for this position</span>
@@ -117,22 +121,26 @@ export function TokenStream({
 /**
  * Most GPT-2 tokens start with a space. The space stays outside the highlighted part, so a
  * highlight hugs the word and does not split in two when the line wraps after the space.
- * Line breaks are shown as marks: one per break, followed by a single new line, so a blank line
- * the model wrote is visible without spreading a short text over the page.
+ * Line breaks are shown as marks, one per break, and a run of breaks starts a single new line
+ * (also when the run spans tokens: `joinsBreak` says the next token continues it). A blank line
+ * the model wrote stays visible without spreading a short text over the page.
  */
-function TokenBody({ text }: { text: string }) {
+function TokenBody({ text, joinsBreak }: { text: string; joinsBreak: boolean }) {
   const lead = /^ +/.exec(text)?.[0] ?? ''
   const rest = text.slice(lead.length)
   if (rest === '') return <span className="word">{text}</span> // a token that is only spaces
+  const parts = rest.split(/(\n+)/)
+  // After a final run of breaks, split() leaves one empty string: that run is the second to last part.
+  const finalRun = rest.endsWith('\n') ? parts.length - 2 : -1
   return (
     <>
       {lead}
       <span className="word">
-        {rest.split(/(\n+)/).map((part, i) =>
+        {parts.map((part, i) =>
           part.startsWith('\n') ? (
             <span key={i} className="nl">
               {'⏎'.repeat(part.length)}
-              {'\n'}
+              {i === finalRun && joinsBreak ? '' : '\n'}
             </span>
           ) : (
             part
