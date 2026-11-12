@@ -1,5 +1,5 @@
 /** UI-side wrapper around the model worker. */
-import type { Backend, GeneratedToken, SteerSpec, WorkerRequest, WorkerResponse } from './protocol'
+import type { Backend, SteerSpec, WorkerRequest, WorkerResponse } from './protocol'
 
 type Listener = (msg: WorkerResponse) => void
 
@@ -7,12 +7,14 @@ export class ModelClient {
   private worker = new Worker(new URL('./model.worker.ts', import.meta.url), { type: 'module' })
   private listeners = new Set<Listener>()
   private nextRequestId = 1
+  private loadRequested = false
 
   constructor() {
     this.worker.onmessage = (e: MessageEvent<WorkerResponse>) => this.listeners.forEach((l) => l(e.data))
     this.worker.onerror = (e) => this.listeners.forEach((l) => l({ type: 'error', message: e.message }))
   }
 
+  /** Every worker message goes to every listener; run messages carry the id `generate` returned. */
   subscribe(listener: Listener): () => void {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
@@ -22,37 +24,25 @@ export class ModelClient {
     this.worker.postMessage(msg)
   }
 
-  private loadRequested = false
-
   /** Starts loading the model once; later calls are ignored. */
-  load(baseUrl: string, backend?: Backend) {
+  load(baseUrl: string, backend?: Backend, sae?: string) {
     if (this.loadRequested) return
     this.loadRequested = true
-    this.send({ type: 'load', baseUrl, backend })
+    this.send({ type: 'load', baseUrl, backend, sae })
   }
 
-  /** Streams generated tokens to `onToken`; resolves when generation ends. */
-  generate(
-    prompt: string,
-    maxNewTokens: number,
-    steer: SteerSpec | null,
-    onToken: (token: GeneratedToken, stepMs: number) => void,
-  ): Promise<void> {
+  /**
+   * Queues a run and returns its request id. Runs execute one at a time, in order. The worker
+   * answers with `prompt`, `token`..., `analysis`, `done`, and later `concepts`.
+   */
+  generate(prompt: string, maxNewTokens: number, steer: SteerSpec | null): number {
     const requestId = this.nextRequestId++
-    return new Promise((resolve, reject) => {
-      const off = this.subscribe((msg) => {
-        if (!('requestId' in msg) || msg.requestId !== requestId) return
-        if (msg.type === 'token') onToken(msg.token, msg.stepMs)
-        if (msg.type === 'done') {
-          off()
-          resolve()
-        }
-        if (msg.type === 'error') {
-          off()
-          reject(new Error(msg.message))
-        }
-      })
-      this.send({ type: 'generate', requestId, prompt, maxNewTokens, steer })
-    })
+    this.send({ type: 'generate', requestId, prompt, maxNewTokens, steer })
+    return requestId
+  }
+
+  /** Stops a run at its next token (or before it starts, if it is still queued). */
+  cancel(requestId: number) {
+    this.send({ type: 'cancel', requestId })
   }
 }
