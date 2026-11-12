@@ -18,10 +18,13 @@ const io: EngineIO = {
   detectBackend: async () => 'wasm',
 }
 
-/** Loads the model in `modelDir` (and its SAE, when it has one). Every engine message goes to `onMessage`. */
-export async function loadEngine(modelDir: string, onMessage: (msg: WorkerResponse) => void): Promise<Engine> {
+/**
+ * Loads the model in `modelDir` and its SAE, when it has one (`saeFolder` picks another SAE folder,
+ * like `?sae=` on the site). Every engine message goes to `onMessage`.
+ */
+export async function loadEngine(modelDir: string, onMessage: (msg: WorkerResponse) => void, saeFolder?: string): Promise<Engine> {
   const engine = new Engine(io, onMessage)
-  await engine.load(modelDir)
+  await engine.load(modelDir, undefined, saeFolder)
   await engine.loadSae()
   return engine
 }

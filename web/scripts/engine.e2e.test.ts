@@ -5,6 +5,8 @@
  *   uv run python export_onnx.py --random --tiny --split-layer 2
  *   uv run python export_steering.py --random --model-dir ../artifacts/models/gpt2-random-tiny
  *   uv run python export_sae.py --random --model-dir ../artifacts/models/gpt2-random-tiny
+ *   uv run python export_sae.py --random --model-dir ../artifacts/models/gpt2-random-tiny \
+ *     --architecture topk --k 8 --folder sae-topk      # optional: the SAE swap test
  *
  * Without them (for example in CI, where artifacts/ does not exist) the suite is skipped.
  */
@@ -165,4 +167,25 @@ describe.skipIf(!available)('engine on the tiny random model', () => {
     const next = await run('Hello world, this is', 2, null)
     expect(next.concepts!.length).toBe(next.analysis!.length)
   })
+})
+
+// Swapping the SAE is an artifact change only: another folder, another activation, same engine.
+describe.skipIf(!existsSync(`${MODEL_DIR}/sae-topk/manifest.json`))('engine with a second SAE folder (TopK)', () => {
+  it('loads it, passes the self-check and keeps k concepts per token', async () => {
+    const messages: WorkerResponse[] = []
+    const engine = await loadEngine(MODEL_DIR, (msg) => messages.push(msg), 'sae-topk')
+    const ready = messages.find((m) => m.type === 'ready')
+    if (ready?.type !== 'ready' || !ready.sae) throw new Error('model did not load with an SAE')
+    expect(ready.sae.activation).toBe('topk')
+    expect(messages.some((m) => m.type === 'sae-ready')).toBe(true)
+    expect(messages.filter((m) => m.type === 'sae-error')).toEqual([])
+
+    await engine.generate(1, 'Hello world, this is', 3, { vectorId: 'sae-5', strength: 0.5 })
+    await engine.settled()
+    const concepts = messages.find((m) => m.type === 'concepts')
+    if (concepts?.type !== 'concepts') throw new Error('no concepts')
+    const { offsets, length } = concepts.concepts
+    for (let t = 0; t < length; t++) expect(offsets[t + 1] - offsets[t]).toBeLessThanOrEqual(ready.sae.k!)
+    expect(offsets[length]).toBeGreaterThan(0)
+  }, 60_000)
 })
