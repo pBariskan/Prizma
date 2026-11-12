@@ -175,8 +175,12 @@ export class Engine {
     }
   }
 
-  /** Stops a run at its next token. The run still ends with a `done` message (`cancelled: true`). */
+  /**
+   * Stops a run at its next token; it still ends with a `done` message (`cancelled: true`).
+   * A run that has already finished was replaced on screen, so its concepts are not computed.
+   */
   cancel(requestId: number): void {
+    if (this.pending.delete(requestId)) return
     this.cancelled.add(requestId)
   }
 
@@ -192,7 +196,11 @@ export class Engine {
    */
   async generate(requestId: number, prompt: string, maxNewTokens: number, steer: SteerSpec | null): Promise<void> {
     if (this.takeCancelled(requestId)) return
-    const bos = this.saeManifest?.prepend_bos ? [this.saeManifest.bos_token_id ?? this.manifest.vocab_size - 1] : []
+    // The model manifest says whether sequences start with BOS (steering.json was computed that way);
+    // an SAE that was trained with BOS needs it as well.
+    const prependBos = this.manifest.prepend_bos || this.saeManifest?.prepend_bos
+    const bosId = this.manifest.bos_token_id ?? this.saeManifest?.bos_token_id ?? this.manifest.vocab_size - 1
+    const bos = prependBos ? [bosId] : []
     // Special-token syntax in the text is not special here: "<|endoftext|>" typed by a user is plain text.
     const promptIds = encode(prompt, { disallowedSpecial: new Set() }).slice(-(MAX_SEQUENCE_TOKENS - 1 - bos.length))
     if (promptIds.length === 0) throw new Error('Please type a prompt first.')
@@ -323,6 +331,7 @@ export class Engine {
     const acts: Float32Array[] = []
     let count = 0
     for (let t = 0; t < run.length; t++) {
+      if (this.cancelled.delete(requestId)) return // replaced by a newer run, nobody is waiting for this
       if (t >= run.firstPosition) {
         const active = sae.active(run.resid, t * sae.dModel, MAX_ACTIVE_FEATURES)
         features.push(active.features)

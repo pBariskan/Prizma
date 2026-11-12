@@ -39,6 +39,27 @@ const SAE_START_STRENGTH = 0.5
 
 const steerKey = (vectorId: string, strength: number) => (vectorId && strength !== 0 ? `${vectorId}@${strength}` : '')
 
+/** A direction from steering.json says what it is; any other id is an SAE feature picked in the Concepts view. */
+const isSaeDirection = (vectorId: string, steering: SteeringFile | null) => {
+  const vector = steering?.vectors.find((v) => v.id === vectorId)
+  return vector ? vector.source === 'sae' : saeFeatureOf(vectorId) !== null
+}
+
+/** The slider range of a direction: its own, or the default for its kind. */
+function rangeOf(vectorId: string, steering: SteeringFile | null): [number, number] {
+  const own = steering?.vectors.find((v) => v.id === vectorId)?.range
+  return own ?? (isSaeDirection(vectorId, steering) ? SAE_RANGE : (steering?.suggested_range ?? [-2, 2]))
+}
+
+/** Where the slider goes when a direction is picked: its own default, a gentle start for SAE features, else where it was. */
+function startStrength(vectorId: string, steering: SteeringFile | null, current: number): number {
+  const own = steering?.vectors.find((v) => v.id === vectorId)?.default_strength
+  if (own !== undefined) return own
+  if (isSaeDirection(vectorId, steering)) return SAE_START_STRENGTH
+  const [lo, hi] = rangeOf(vectorId, steering)
+  return Math.min(Math.max(current, lo), hi)
+}
+
 export default function App() {
   const [status, setStatus] = useState<ModelStatus>({ kind: 'loading', label: 'Fetching manifest', loaded: 0, total: 0 })
   const [steering, setSteering] = useState<SteeringFile | null>(null)
@@ -74,6 +95,15 @@ export default function App() {
 
   const ready = status.kind === 'ready'
 
+  // The first direction of steering.json is preselected, unless a link or the example chose one already.
+  const adoptSteering = useEffectEvent((file: SteeringFile) => {
+    setSteering(file)
+    const first = file.vectors[0]
+    if (vectorId || !first) return
+    setVectorId(first.id)
+    if (shared.strength === undefined) setStrength(startStrength(first.id, file, strength))
+  })
+
   // --- Worker messages -----------------------------------------------------------------------
   useEffect(() => {
     const off = client.subscribe((msg) => {
@@ -81,10 +111,9 @@ export default function App() {
         case 'progress':
           return setStatus({ kind: 'loading', ...msg })
         case 'ready':
-          setSteering(msg.steering)
+          adoptSteering(msg.steering)
           setSae(msg.sae)
           setSaeStatus(msg.sae ? { kind: 'waiting' } : { kind: 'none' })
-          setVectorId((v) => v || msg.steering.vectors[0]?.id || '')
           return setStatus({ kind: 'ready', backend: msg.backend, manifest: msg.manifest, loadMs: msg.loadMs })
         case 'sae-labels':
           return setLabels(msg.labels.labels)
@@ -171,8 +200,12 @@ export default function App() {
 
   // Moving the slider or picking another concept rewrites only the steered text.
   const resteer = useEffectEvent(() => {
+    if (!ran) return
+    // From here on the steered text is live, so the precomputed example is no longer what is on screen.
+    started.current = true
+    setShowingDemo(false)
     setError(null)
-    if (ran) launchSteered(ran.prompt, ran.maxNew)
+    launchSteered(ran.prompt, ran.maxNew)
   })
   useEffect(() => {
     if (!ready || !ran || steerKey(vectorId, strength) === shownSteer.current) return
@@ -185,15 +218,21 @@ export default function App() {
     [picked, runs.original],
   )
 
-  // Keep the link in the address bar in sync, so copying it reproduces what is on screen.
+  /** The link that reproduces what is on screen. */
+  const shareSearch = useMemo(
+    () =>
+      ran &&
+      buildShare(
+        { prompt: ran.prompt, maxNew: ran.maxNew, vector: vectorId, strength, selection, view, layer: head.layer, head: head.head, concept: pinned },
+        location.search,
+      ),
+    [ran, vectorId, strength, selection, view, head, pinned],
+  )
+  // The address bar follows the screen. The precomputed example stays out of it, so that a reload
+  // shows the example again instead of waiting for the model.
   useEffect(() => {
-    if (!ran || showingDemo) return
-    const search = buildShare(
-      { prompt: ran.prompt, maxNew: ran.maxNew, vector: vectorId, strength, selection, view, layer: head.layer, head: head.head, concept: pinned },
-      location.search,
-    )
-    history.replaceState(null, '', `${location.pathname}?${search}`)
-  }, [ran, showingDemo, vectorId, strength, selection, view, head, pinned])
+    if (shareSearch && !showingDemo) history.replaceState(null, '', `${location.pathname}?${shareSearch}`)
+  }, [shareSearch, showingDemo])
 
   // --- Derived state -------------------------------------------------------------------------
   const labelOf = (feature: number) => labels?.[feature] ?? demoLabels[feature] ?? null
@@ -202,8 +241,7 @@ export default function App() {
   const vectorLabel =
     vector?.label ??
     (feature !== null ? `${labelOf(feature) ?? 'Concept'} (#${feature})` : (demoLabels[`vector:${vectorId}`] ?? null))
-  const isSaeVector = vector ? vector.source === 'sae' : feature !== null
-  const range = vector?.range ?? (isSaeVector ? SAE_RANGE : (steering?.suggested_range ?? [-2, 2]))
+  const range = rangeOf(vectorId, steering)
 
   const selectedRun = selection ? runs[selection.run] : null
   const pos = selection && selectedRun && selection.pos < selectedRun.tokens.length ? selection.pos : null
@@ -241,9 +279,14 @@ export default function App() {
   const steerOn = steerKey(vectorId, strength) !== ''
 
   async function copyLink() {
-    await navigator.clipboard.writeText(location.href).catch(() => {})
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
+    if (!shareSearch) return
+    try {
+      await navigator.clipboard.writeText(`${location.origin}${location.pathname}?${shareSearch}`)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      setError('Your browser did not allow copying the link.')
+    }
   }
 
   return (
@@ -283,7 +326,7 @@ export default function App() {
           <button type="button" onClick={() => generate()} disabled={!ready || !prompt.trim()}>
             {!ready ? 'Loading model…' : busy ? 'Generating…' : 'Generate'}
           </button>
-          <button type="button" className="ghost" onClick={copyLink} disabled={!ran || showingDemo} title="Copy a link that reproduces this text, concept and slider">
+          <button type="button" className="ghost" onClick={copyLink} disabled={!shareSearch} title="Copy a link that reproduces this text, concept and slider">
             {copied ? 'Link copied' : 'Copy link'}
           </button>
         </div>
@@ -296,10 +339,7 @@ export default function App() {
         customLabel={vectorLabel}
         onVector={(id) => {
           setVectorId(id)
-          const next = steering?.vectors.find((v) => v.id === id)
-          const sae = next ? next.source === 'sae' : saeFeatureOf(id) !== null
-          const [lo, hi] = next?.range ?? (sae ? SAE_RANGE : (steering?.suggested_range ?? [-2, 2]))
-          setStrength(next?.default_strength ?? (sae ? SAE_START_STRENGTH : Math.min(Math.max(strength, lo), hi)))
+          setStrength(startStrength(id, steering, strength))
         }}
         strength={strength}
         range={range}

@@ -151,4 +151,18 @@ describe.skipIf(!available)('engine on the tiny random model', () => {
     expect(mine.filter((m) => m.type === 'token').length).toBeLessThan(30)
     expect(mine.some((m) => m.type === 'analysis')).toBe(false)
   })
+
+  it('does not encode a run that was replaced after it finished', async () => {
+    const requestId = nextId++
+    const before = messages.length
+    await engine.generate(requestId, 'Hello world, this is', 2, null)
+    engine.cancel(requestId) // what the UI does when the slider moves on
+    await engine.settled()
+    const mine = messages.slice(before).filter((m) => 'requestId' in m && m.requestId === requestId)
+    expect(mine.some((m) => m.type === 'analysis')).toBe(true)
+    expect(mine.some((m) => m.type === 'concepts')).toBe(false)
+    // The engine is still healthy afterwards.
+    const next = await run('Hello world, this is', 2, null)
+    expect(next.concepts!.length).toBe(next.analysis!.length)
+  })
 })

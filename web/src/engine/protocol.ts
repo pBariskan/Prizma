@@ -20,6 +20,9 @@ export interface Manifest {
   n_positions: number
   top_k: number
   quantization: string
+  /** Sequences start with `bos_token_id` (GPT-2: `<|endoftext|>`); steering.json assumes the same. */
+  prepend_bos?: boolean
+  bos_token_id?: number
   files: { embeddings: string; part_a: string; part_b: string }
   bytes: Record<string, number>
 }

@@ -60,7 +60,7 @@ acts = relu(pre) on the k largest, 0 elsewhere     # activation "topk" (k in the
 | `activation`, `k` | `"relu"` or `"topk"` (with `k`) |
 | `center_resid` | The SAE expects the mean-centered residual. True for SAEs trained on a TransformerLens model with `center_writing_weights` (the default there, and what the open GPT-2 SAEs used) |
 | `apply_b_dec_to_input` | Subtract `b_dec` before the encoder |
-| `prepend_bos`, `bos_token_id` | The SAE was trained on contexts that start with `<\|endoftext\|>`; the engine then starts every sequence with it |
+| `prepend_bos`, `bos_token_id` | The SAE was trained on contexts that start with `<\|endoftext\|>`. The engine starts every sequence with it when the model manifest or the SAE manifest sets `prepend_bos` |
 | `version` | Hash of the weights; part of the browser cache key, so a swapped SAE is downloaded again |
 | `files`, `decoder_shard_size`, `bytes` | File names (the decoder name has a `{shard}` placeholder, 4 digits) and sizes |
 | `neuronpedia` | Optional `<model>/<sae>` id; the Concepts view links each feature to its Neuronpedia page |

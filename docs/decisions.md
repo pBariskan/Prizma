@@ -27,11 +27,13 @@ SAE does not mention this, so `export_sae.py` measures both conventions on every
 when the configured one is worse. Steering needs no change: a mean component added to the
 residual is removed by the next LayerNorm.
 
-**Sequences start with `<|endoftext|>` when the SAE asks for it (`prepend_bos`).** The open SAE
-(and SAELens by default) is trained on contexts that begin with BOS, and without it the first
-real token becomes GPT-2's attention sink with a huge norm. The engine prepends the token, the UI
-shows it as a small "start" marker (attention lines can point at it), and it has no concepts. It
-counts towards the 64-token cap.
+**Sequences start with `<|endoftext|>` when the model or the SAE asks for it (`prepend_bos`).**
+The open SAE (and SAELens by default) is trained on contexts that begin with BOS, and without it
+the first real token becomes GPT-2's attention sink with a huge norm. The model manifest is the
+main switch, because `steering.json` is computed on the same kind of sequence; the SAE manifest
+is honoured as well, so an SAE that needs BOS still gets it on a model exported without the
+field. The engine prepends the token, the UI shows it as a small "start" marker (attention lines
+can point at it), and it has no concepts. It counts towards the 64-token cap.
 
 **Only the encoder is downloaded up front; decoder rows come in shards.** The encoder (37.7 MB
 fp16) loads after the model is usable, so Next word, Attention and Steering work first and

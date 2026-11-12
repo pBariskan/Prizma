@@ -37,7 +37,7 @@ The model is split at the residual stream entering block 6 (`blocks.6.hook_resid
    for steering, then SAE encode (plain JS, `sae.ts`) for the Concepts view. How to encode is
    written in `sae/manifest.json`, so swapping the SAE is an artifact change only. The open GPT-2
    SAE needs two things that are easy to miss: the residual is mean-centered first (`center_resid`)
-   and every sequence starts with `<|endoftext|>` (`prepend_bos`).
+   and every sequence starts with `<|endoftext|>` (`prepend_bos`, in the model or the SAE manifest).
 4. **Part B** (`resid` -> `last_logits [1,V]`, `topk_probs/topk_ids [1,T,10]`, `attn [1,6,12,T,T]`)
    runs blocks 6-11 and the unembedding.
 
