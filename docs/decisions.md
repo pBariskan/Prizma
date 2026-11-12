@@ -2,6 +2,70 @@
 
 Short records of choices that are not obvious from the code. Newest first.
 
+## 2026-11-12: Phase 1 pipeline (our own SAE)
+
+**SAELens trains on our own forward pass.** `train_sae.py` hands SAELens a small wrapper
+(`HookedGPT2`) around `gpt2_split.GPT2` instead of a TransformerLens model. The SAE therefore
+learns on exactly the tensor part A gives the browser: the raw Hugging Face residual stream, with
+none of TransformerLens' weight processing. It also keeps us independent of TransformerLens 4,
+which replaced `HookedTransformer` with a new bridge class.
+
+**Our SAE reads the raw residual; the open SAE reads a centered one.** Joseph Bloom's `res-jb`
+SAEs were trained with `center_writing_weights`, so they expect the residual minus its mean over
+the 768 dimensions. `prizma_research/sae.py` records this per SAE (`center_input`). `eval.py`
+reports explained variance in both spaces; the centered one is the fair comparison, because the
+model itself only ever reads the residual through a LayerNorm, which removes that mean.
+
+**Every context starts with `<|endoftext|>`, and those positions are never used.** The browser
+puts BOS in front of every prompt, so training does too. BOS and document-boundary positions are
+left out of training, example collection and all metrics: their residual is an outlier (the
+attention sink). Training contexts are 128 tokens, examples and evaluation use 64, the longest
+sequence the site runs.
+
+**Data.** OpenWebText pre-tokenized for GPT-2 (`apollo-research/Skylion007-openwebtext-tokenizer-gpt2`),
+streamed. Training reads from the first shard (200M tokens end in the second of 73); evaluation
+reads the last shard and example collection the one before it.
+
+**Training setup.** TopK, 16,384 concepts, k = 32, 200M tokens, batches of 4,096 tokens, Adam at
+3e-4 with 1,000 warm-up steps and a linear decay over the last 20%, AuxK loss for dead concepts,
+fp32. Activations are scaled to a mean norm of sqrt(768) during training and SAELens folds the
+factor into the weights at the end, so the saved SAE needs no normalization at run time.
+
+**A minimal SAE class is the reference for the browser.** `prizma_research/sae.py` is a few lines of
+math (`relu` or top-k of `(x - b_dec) @ W_enc + b_enc`). Evaluation and example collection use it
+instead of SAELens, every training run ends by comparing the two on fresh activations, and the
+SAELens folder (`cfg.json` + `sae_weights.safetensors`) is what `export_sae.py` converts for the site.
+
+**Training runs live in `research/runs/`, not in `artifacts/`.** They hold checkpoints, logs,
+examples and API state that the site never downloads. Neither folder is committed.
+
+**Labels: Claude Haiku 5.5 through the Batch API.** One request per concept with its 15 strongest
+and 5 random firing snippets, firing tokens marked as `<<token>>`; structured output with a label
+of at most 6 words and a one-sentence description; "unclear" is an allowed answer and shows as no
+label on the site. Low thinking effort, no prompt caching (the shared prefix is small).
+
+**Scores: detection on held-out examples, for every labeled concept.** The model sees only the
+label and description plus 5 firing and 5 silent snippets, unmarked and shuffled, and says where
+the concept fires. The score is the balanced accuracy (0.5 chance, 1.0 perfect). The firing
+snippets are random contexts the labeling pass never saw. Silent snippets are random text, which
+makes this a lenient test: it shows whether a label describes what the concept fires on, not
+whether it separates it from similar concepts. The plan said to score a sample; scoring all
+concepts costs about $2, so we score all.
+
+**Spending money takes an explicit flag.** `autointerp.py` is a dry run unless `--submit` is
+given, refuses a pass estimated above `--max-cost`, and writes every batch id to disk before it
+waits, so a re-run collects results instead of paying twice. `run_phase1.py` never submits.
+
+**How we read the Phase 1 gate.** "Metrics close to the open SAE" is checked by `eval.py` as:
+explained variance (centered) at most 0.05 below the open SAE, LM loss recovered at most 2 points
+below it, at most 10% dead concepts. "Most of 50 random concepts make sense" stays a human check
+on `runs/<name>/autointerp/review.md`.
+
+**Cost, re-estimated with prices from 2026-11-12.** GPU: one RTX 4090 on RunPod Secure Cloud at
+$0.89/h for 2 to 3.5 hours, about $2-4 (the plan said $10-40). Labeling and scoring 16,384
+concepts: about $5-6 at $0.05 / $0.25 per million input / output tokens (the plan said $20-50).
+Details and the provider comparison are in [gpu-runbook.md](gpu-runbook.md).
+
 ## 2026-11-07: Hosting on GitHub Pages
 
 The site is deployed to GitHub Pages by `.github/workflows/pages.yml` on every push to `main`

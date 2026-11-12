@@ -18,7 +18,7 @@ from collections.abc import Iterable, Iterator
 
 import torch
 
-from prizma_research.lm import EOT_ID, LM
+from prizma_research.lm import EOT_ID, LM, Tokenizer
 
 # 8.8M rows of 1,024 GPT-2 tokens (about 9B tokens) in 73 parquet shards of ~124M tokens each.
 OPENWEBTEXT = "apollo-research/Skylion007-openwebtext-tokenizer-gpt2"
@@ -73,13 +73,22 @@ def _hub_rows(dataset: str, data_files: str | None) -> Iterator[dict]:
     yield from load_dataset(dataset, split="train", streaming=True, data_files=data_files)
 
 
+def _check_context_size(lm: LM, context_size: int) -> None:
+    if context_size > lm.gpt.cfg.n_positions:
+        raise ValueError(f"context_size {context_size} exceeds the model's {lm.gpt.cfg.n_positions} positions")
+
+
 def iter_contexts(lm: LM, *, context_size: int, dataset: str = OPENWEBTEXT, data_files: str | None = None,
                   seed: int = 0) -> Iterator[list[int]]:
     """Yield contexts of exactly ``context_size`` token ids, each starting with <|endoftext|>."""
-    if context_size > lm.gpt.cfg.n_positions:
-        raise ValueError(f"context_size {context_size} exceeds the model's {lm.gpt.cfg.n_positions} positions")
-    if lm.random:
-        docs = (lm.tokenizer.encode(text) for text in synthetic_documents(seed))
+    _check_context_size(lm, context_size)
+    yield from _iter_contexts(lm.tokenizer, lm.random, context_size, dataset, data_files, seed)
+
+
+def _iter_contexts(tokenizer: Tokenizer, synthetic: bool, context_size: int, dataset: str, data_files: str | None,
+                   seed: int) -> Iterator[list[int]]:
+    if synthetic:
+        docs = (tokenizer.encode(text) for text in synthetic_documents(seed))
         yield from _contexts_from_documents(docs, context_size)
         return
 
@@ -97,7 +106,7 @@ def iter_contexts(lm: LM, *, context_size: int, dataset: str = OPENWEBTEXT, data
             yield row[column]
 
     if column == "text":
-        yield from _contexts_from_documents((lm.tokenizer.encode(text) for text in values()), context_size)
+        yield from _contexts_from_documents((tokenizer.encode(text) for text in values()), context_size)
     else:
         yield from _contexts_from_rows((list(row) for row in values()), context_size)
 
@@ -123,8 +132,11 @@ def as_hf_dataset(lm: LM, *, context_size: int, dataset: str, data_files: str | 
     """The same contexts as an ``IterableDataset`` with an ``input_ids`` column, the form SAELens reads."""
     from datasets import Features, IterableDataset, Sequence, Value
 
+    _check_context_size(lm, context_size)
+    tokenizer, synthetic = lm.tokenizer, lm.random  # the generator must not hold the model: `datasets` hashes it
+
     def generate() -> Iterator[dict]:
-        for ctx in iter_contexts(lm, context_size=context_size, dataset=dataset, data_files=data_files, seed=seed):
+        for ctx in _iter_contexts(tokenizer, synthetic, context_size, dataset, data_files, seed):
             yield {"input_ids": ctx}
 
     return IterableDataset.from_generator(generate, features=Features({"input_ids": Sequence(Value("int64"))}))

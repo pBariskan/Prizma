@@ -17,7 +17,7 @@ job is small for a modern GPU, and Claude Haiku 5.5 through the Batch API costs 
 input tokens and $0.25 per million output tokens.
 
 What is not verified: the development environment cannot reach huggingface.co, so the pipeline
-has only ever run on a random-weight model with synthetic text (`--random --tiny`, 36 tests). Real
+has only ever run on a random-weight model with synthetic text (`--random --tiny`, 32 tests). Real
 GPT-2, OpenWebText and the open SAE are first touched by the smoke test in step 2, which takes a
 few minutes and fails early if something is wrong. The time estimates below are calculated, not
 measured; the training log prints the measured speed and the minutes left after its first 100 steps.
@@ -93,14 +93,15 @@ What `run_phase1.py` does, in order:
 | Evaluate | `eval.py` | `eval.json`, `eval.md`: metrics next to the open SAE, gate check |
 | Labeling dry run | `autointerp.py` | prints what labeling will cost; sends nothing |
 
-While it runs, the training log looks like this, one line every 100 steps:
+While it runs, the training log prints one line every 100 steps in this form (the numbers here
+only show the format):
 
 ```
-[train] step   4000     16.38M tok  mse ...  EV 0.85  L0 32.0  dead 12  61.3k tok/s  50 min left
+[train] step   4000     16.38M tok  mse 0.1234  EV 0.850  L0 32.0  dead 12  60.0k tok/s  51 min left
 ```
 
-`EV` (explained variance) should climb quickly and flatten, `L0` stays at 32, and `dead` should
-stay a small share of the 16,384 concepts.
+`EV` (explained variance) should climb quickly and then flatten, `L0` stays at 32, and `dead`
+should stay a small share of the 16,384 concepts.
 
 ## 3. Read the result
 
@@ -153,7 +154,7 @@ the uncertain part, and the pilot measures it.
 
 ## 5. Save the results and stop paying
 
-Everything is in `research/runs/gpt2-l6-topk16384-k32/` (about 350 MB without `checkpoints/`).
+Everything is in `research/runs/gpt2-l6-topk16384-k32/` (about 300 MB without `checkpoints/`).
 The simplest way off the pod is a private Hugging Face model repository:
 
 ```bash
@@ -172,11 +173,13 @@ The site reads the SAE from `artifacts/models/gpt2-l6/sae/`. With the Phase 2 ex
 
 ```bash
 cd research
-uv run python export_sae.py --sae-path runs/gpt2-l6-topk16384-k32     # weights -> artifacts/models/gpt2-l6/sae/
+mkdir -p ../artifacts/models/gpt2-l6/sae
 cp -r runs/gpt2-l6-topk16384-k32/web/sae/. ../artifacts/models/gpt2-l6/sae/   # labels.json, concepts/
+uv run python export_sae.py --sae-path runs/gpt2-l6-topk16384-k32     # weights; lists labels.json in the manifest
 ```
 
-Then upload `artifacts/` to the CDN as for Phase 0. No web code changes.
+Copy the labels first: `export_sae.py` only lists a `labels.json` that is already there and has
+one entry per concept. Then upload `artifacts/` to the CDN as for Phase 0. No web code changes.
 
 ## If something goes wrong
 
@@ -184,8 +187,8 @@ Then upload `artifacts/` to the CDN as for Phase 0. No web code changes.
 | --- | --- |
 | The smoke test fails while downloading | Usually a Hugging Face rate limit or outage. `export HF_TOKEN=...` (a free read token) and run the same command again. |
 | `PyTorch does not see the GPU` | The pod has no GPU or an old driver. Deploy a new pod from a recent RunPod PyTorch template. |
-| The pod stopped or training crashed | Run the same command again. Finished steps are skipped and training continues from its newest checkpoint (one every 50M tokens). |
-| Out of memory | Should not happen on 24 GB. On a smaller card: `bash research/gpu_run.sh --skip-smoke` after lowering `--store-batch-size` in a direct `train_sae.py` call. |
+| The pod stopped or training crashed | Run the same command again. Finished steps are skipped and training continues from its newest checkpoint (one every 40M tokens). |
+| Out of memory | Should not happen on 24 GB. On a smaller card, run the four scripts by hand with a smaller `--store-batch-size` (`train_sae.py`) and `--batch-size` (`collect_top.py`, `eval.py`). |
 | Training is far slower than 30k tokens/s | Check `nvidia-smi`: if the GPU is idle, the dataset stream is the bottleneck (slow host network). Move to another pod. |
 | A labeling batch expires or requests fail | `uv run python autointerp.py --run $RUN --submit --retry-failed` sends only the failed concepts again. |
 | You want to start over | Delete `research/runs/<name>/` (or just the step's output: `train_summary.json`, `examples/`, `eval.json`, `autointerp/`). |
