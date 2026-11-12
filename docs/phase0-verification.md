@@ -4,7 +4,8 @@ Date: 2026-11-12. Gate from the plan: **steering visibly changes the output in t
 
 **Result: passed.** Real GPT-2 small, exported by `research/export_onnx.py`, runs in Chromium and
 a steering vector added between the two halves changes the generated text in every case tried.
-One thing is still open: speed on a real GPU through WebGPU (see [Not verified](#not-verified)).
+Still open: speed on a real GPU through WebGPU, and Safari, which does not load the model yet
+(see [Known problems and not verified](#known-problems-and-not-verified)).
 
 ![Original vs. steered text with the Weddings feature](img/phase0-steering-weddings.png)
 
@@ -170,8 +171,9 @@ public, the same checks were repeated on <https://pbariskan.github.io/Prizma/> i
 Chromium (WASM, the cloud machine has no GPU), with the model files coming from the Hugging Face
 dataset (`huggingface.co` and `us.aws.cdn.hf.co`).
 
-- **The model loads.** It is ready 13 to 17 s after the page opens with an empty cache, at 0.4 to
-  0.6 s per token, with no console errors and no failed requests.
+- **The model loads in Chromium.** It is ready 13 to 17 s after the page opens with an empty
+  cache, at 0.4 to 0.6 s per token, with no console errors and no failed requests. Safari does
+  not: see [Known problems and not verified](#known-problems-and-not-verified).
 - **Steering gives the same texts as locally.** "I think that you are" continues with "right. I
   think that you are right." and, with Weddings (12102) at 0.5x, with "going to be the bride of a
   big day." "The weather today is" continues with "a bit different than it was yesterday." and,
@@ -188,12 +190,15 @@ dataset (`huggingface.co` and `us.aws.cdn.hf.co`).
 - **The rest of the page.** An example start and the Enter key run the model, nothing scrolls
   sideways at 390 px width, and the dark colour scheme renders.
 
-## Not verified
+## Known problems and not verified
 
 - **WebGPU on a real GPU.** The cloud machine has none. Open the site in Chrome on a laptop: the
   header should say `WebGPU` and a token should take tens of milliseconds, not half a second.
-- **Other browsers.** Only Chromium was run. Safari and Firefox fall back to WASM where WebGPU is
-  missing.
+- **Safari does not load the model.** Reported on 2026-11-12 from Safari on macOS, on the live
+  site: the page and the precomputed example appear, then starting the model stops with
+  `RangeError: Maximum call stack size exceeded`. Everything in section 4 is Chromium only. The
+  cause is not found yet; Safari cannot be run on the cloud machine.
+- **Firefox.** Not run. It should fall back to WASM where WebGPU is missing.
 - **Touch.** Only the layout was checked at phone width. On a real phone a tap selects a word, and
   the candidate popup of the Steering view has no touch equivalent.
 
