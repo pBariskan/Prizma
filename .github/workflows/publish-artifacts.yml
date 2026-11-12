@@ -1,0 +1,77 @@
+name: Publish model artifacts
+
+# Exports GPT-2 with real weights on the runner and uploads artifacts/models/ to a public
+# Hugging Face dataset, which is what the site downloads from (ARTIFACTS_URL).
+# Run it by hand: Actions -> Publish model artifacts -> Run workflow. See docs/publishing.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dataset:
+        description: "Hugging Face dataset to upload to (default: <token owner>/prizma-artifacts)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-artifacts
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: research
+    env:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: research/uv.lock
+      - name: Check the token
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "::error::Add a Hugging Face write token as the HF_TOKEN repository secret first (docs/publishing.md)."
+            exit 1
+          fi
+      - run: uv sync
+      - name: Export GPT-2 (fails if it does not match Hugging Face)
+        run: uv run python export_onnx.py
+      - name: Export steering vectors
+        run: uv run python export_steering.py
+      - name: Upload to Hugging Face
+        env:
+          DATASET_INPUT: ${{ inputs.dataset }}
+        run: |
+          OWNER="$(uv run python -c "from huggingface_hub import whoami; print(whoami()['name'])")"
+          DATASET="${DATASET_INPUT:-$OWNER/prizma-artifacts}"
+          # The first upload creates the dataset. It has to be public: browsers fetch it without a token.
+          uv run hf upload "$DATASET" dataset_card.md README.md --repo-type dataset --no-private \
+            --commit-message "Update dataset card"
+          uv run hf upload "$DATASET" ../artifacts/models models --repo-type dataset \
+            --commit-message "Publish artifacts from ${GITHUB_SHA::7}"
+          URL="https://huggingface.co/datasets/$DATASET/resolve/main/models"
+          {
+            echo "### Artifacts published"
+            echo
+            echo "Dataset: https://huggingface.co/datasets/$DATASET"
+            echo
+            echo "Set the \`ARTIFACTS_URL\` repository variable to:"
+            echo
+            echo "\`$URL\`"
+            echo
+            echo "Then re-run the *Deploy site to GitHub Pages* workflow."
+            echo
+            echo '```json'
+            cat ../artifacts/models/gpt2-l6/manifest.json
+            echo
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "ARTIFACTS_URL=$URL"

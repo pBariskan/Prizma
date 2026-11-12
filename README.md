@@ -6,8 +6,12 @@ Type a sentence and Prizma shows which words GPT-2 considered, where it looked, 
 lit up inside it. Then push on a concept with a slider and watch the text change. No server: the
 model, the sparse autoencoder and the steering all run on your own GPU through WebGPU.
 
-> Status: **Phase 0 prototype.** GPT-2 small is split in two at layer 6, runs in the browser, and
-> a steering vector added between the halves changes the generated text. See [Roadmap](#roadmap).
+> Status (2026-11-12): **Phase 0 gate passed.** Real GPT-2 small, split in two at layer 6, runs in
+> the browser, and a steering vector added between the halves changes the generated text
+> ([verification](docs/phase0-verification.md)). The site is not live yet: the model files still
+> have to be published ([docs/publishing.md](docs/publishing.md)). See [Roadmap](#roadmap).
+
+![The same prompt continued by GPT-2 and by GPT-2 steered towards weddings](docs/img/phase0-steering-weddings.png)
 
 ## How it works
 
@@ -39,7 +43,7 @@ Requirements: Python 3.11+ with [uv](https://docs.astral.sh/uv/), Node 20+, netw
 huggingface.co for the GPT-2 weights.
 
 ```bash
-# 1. Export the model (~220 MB into artifacts/models/gpt2-l6)
+# 1. Export the model (~180 MB into artifacts/models/gpt2-l6)
 cd research
 uv sync
 uv run python export_onnx.py
@@ -59,21 +63,24 @@ No GPT-2 download? Add `--random --tiny --split-layer 2` to `export_onnx.py` and
 `export_sae.py` for a tiny random model that checks the pipeline (`/?model=gpt2-random-tiny`).
 
 Tests: `uv run --group dev pytest` in `research/`, `npm test` in `web/`.
+`uv run python check_steering.py` in `research/` prints original vs. steered text for every
+steering vector without a browser.
 
 ## Deployment
 
 The site is deployed to GitHub Pages on every push to `main` (enable it once under
-*Settings → Pages → Source: GitHub Actions*). The ~220 MB of model files are hosted separately,
-for example in a Hugging Face dataset; point the site at them with the `ARTIFACTS_URL` repository
-variable (*Settings → Secrets and variables → Actions → Variables*).
+*Settings → Pages → Source: GitHub Actions*). The ~180 MB of model files are hosted separately in
+a public Hugging Face dataset: the *Publish model artifacts* workflow exports them on the runner
+and uploads them, and the `ARTIFACTS_URL` repository variable points the site at them. The steps,
+with links, are in [docs/publishing.md](docs/publishing.md).
 
 ## Roadmap
 
 | Phase | Content | Status |
 | --- | --- | --- |
-| 0 Prototype | Split GPT-2 running in the browser; a steering vector changes the output | in progress |
-| 1 Own SAE | TopK SAE (16k concepts) on layer 6, metrics vs. an open SAE, Claude Haiku concept labels | |
-| 2 MVP + launch | Next word, Attention, Concepts and Steering views, share links, live site | views built on the open GPT-2 SAE; launch pending |
+| 0 Prototype | Split GPT-2 running in the browser; a steering vector changes the output | gate passed 2026-11-12 with real weights; publishing the model files and the site is the last step |
+| 1 Own SAE | TopK SAE (16k concepts) on layer 6, metrics vs. an open SAE, Claude Haiku concept labels | pipeline being written, GPU run not started |
+| 2 MVP + launch | Next word, Attention, Concepts and Steering views, share links, live site | views built on the open GPT-2 SAE and checked with real weights; launch pending |
 | 3 Story | Concept explorer, guided tours, behind-the-scenes write-up, demo video | |
 
 The full plan is in [docs/plan.md](docs/plan.md); design choices are in [docs/decisions.md](docs/decisions.md).
