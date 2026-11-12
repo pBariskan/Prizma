@@ -179,7 +179,8 @@ def run_pass(kind: str, features: list[int], examples: Examples, store: Store, c
     requests = build_requests(kind, todo, examples, store, effort=args.effort, placeholder=client is None)
     done = sum(1 for f in features if f in rows)
     if not requests:
-        print(f"[{kind}] nothing to send: {done} of {len(features)} selected concepts have a result, "
+        waiting = f"{len(in_flight)} are in batches that are still running, " if in_flight else ""
+        print(f"[{kind}] nothing to send: {done} of {len(features)} selected concepts have a result, {waiting}"
               f"the others have too few examples{'' if kind == 'label' else ' or no clear label'}.")
         return not in_flight
 
