@@ -6,7 +6,8 @@
 
 Writes ``<model-dir>/sae/`` (format in ``artifacts/README.md`` and ``prizma_research/sae_artifact.py``).
 Swapping the SAE the site uses means running this script on another SAE and uploading the folder;
-no web code changes.
+no web code changes. ``--folder sae-own`` writes next to the current SAE instead of replacing it,
+and ``/?sae=sae-own`` shows that one, so two SAEs can be compared on the same model.
 
 The export verifies itself: it reloads the fp16 files it wrote, runs the model on a few sentences,
 and writes explained variance and L0 into ``manifest.json``. It also checks the residual-centering
@@ -113,6 +114,8 @@ def main() -> int:
     ap.add_argument("--sae-repo", default=OPEN_SAE_REPO, help="Hugging Face repo with SAELens SAEs")
     ap.add_argument("--sae-id", default=None, help="folder inside the repo (default: blocks.<L>.hook_resid_pre)")
     ap.add_argument("--sae-path", type=Path, default=None, help="local SAELens folder (cfg.json + sae_weights.safetensors)")
+    ap.add_argument("--folder", default="sae",
+                    help="folder inside model-dir to write; the site reads 'sae', another one with ?sae=<folder>")
     ap.add_argument("--name", default=None, help="display name stored in the manifest")
     ap.add_argument("--neuronpedia", default=None, help="Neuronpedia id for feature links, e.g. gpt2-small/6-res-jb")
     ap.add_argument("--shard-size", type=int, default=256, help="decoder rows per shard file")
@@ -140,7 +143,7 @@ def main() -> int:
     if args.prepend_bos is not None:
         settings.prepend_bos = args.prepend_bos
 
-    out_dir = args.model_dir / "sae"
+    out_dir = args.model_dir / args.folder
     files = sae_format.write_weights(out_dir, weights, args.shard_size)
     stored = sae_format.read_weights(out_dir, files)  # what the browser will actually compute with
 

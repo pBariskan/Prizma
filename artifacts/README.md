@@ -77,12 +77,15 @@ No web code changes:
 
 ```bash
 cd research
+# first copy labels.json (and concepts/) from autointerp.py into artifacts/models/gpt2-l6/sae/:
+# a labels.json with the right number of features is kept and registered in the manifest
 uv run python export_sae.py --sae-path runs/<our-sae>     # a SAELens save: cfg.json + sae_weights.safetensors
-# copy labels.json from autointerp.py into artifacts/models/gpt2-l6/sae/ and re-run the line above
-# (an existing labels.json with the right number of features is kept and registered in the manifest)
 cd ../web && npm run export-demo -- --vector sae-<id> --strength 0.5
 ```
 
 `export_sae.py` reads the encode recipe from the SAELens `cfg.json` (top level, then `metadata`,
-then the legacy defaults) and folds `rescale_acts_by_decoder_norm` into the weights. To compare
-two SAEs side by side, export one into another folder name and open the site with `?sae=<folder>`.
+then the legacy defaults) and folds `rescale_acts_by_decoder_norm` into the weights. It only
+rewrites the weight files and the manifest; other files in the folder are left alone.
+
+To compare two SAEs side by side, export one into another folder with `--folder sae-own` (same
+option on `export_labels.py`) and open the site with `?sae=sae-own`.

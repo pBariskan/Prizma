@@ -195,3 +195,17 @@ def test_export_own_sae_from_a_saelens_folder(tmp_path, monkeypatch):
     assert manifest["verification"]["mean_l0"] <= 8
     stored = sae_format.read_weights(model_dir / "sae", manifest)
     assert torch.allclose(stored["W_dec"].norm(dim=-1), torch.ones(96), atol=1e-3)  # decoder norms were folded
+
+    # The same SAE as a second folder next to the first (the site shows it with ?sae=sae-own).
+    # Labels and concept shards copied there before the export stay, extra keys and all.
+    own = model_dir / "sae-own"
+    (own / "concepts").mkdir(parents=True)
+    (own / "concepts" / "0000.json").write_text("{}")
+    (own / "labels.json").write_text(json.dumps({"source": "autointerp", "labels": ["x"] * 96, "scores": [0.9] * 96}))
+    first = (model_dir / "sae" / "manifest.json").read_text()
+    monkeypatch.setattr(sys, "argv", ["export_sae.py", "--random", "--model-dir", str(model_dir), "--sae-path", str(run),
+                                      "--folder", "sae-own"])
+    assert export_sae.main() == 0
+    assert sae_format.read_manifest(own)[0]["files"]["labels"] == "labels.json"
+    assert (own / "concepts" / "0000.json").exists()
+    assert (model_dir / "sae" / "manifest.json").read_text() == first

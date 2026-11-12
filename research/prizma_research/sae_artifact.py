@@ -84,7 +84,8 @@ def fold_decoder_norm(w: dict[str, torch.Tensor], cfg: dict) -> dict[str, torch.
     activations by them again before decoding. Scaling the encoder by the norms and normalising the
     decoder rows gives exactly the same activations and reconstruction with the plain recipe.
     """
-    if not cfg.get("rescale_acts_by_decoder_norm", False):
+    meta = cfg.get("metadata") or {}
+    if not cfg.get("rescale_acts_by_decoder_norm", meta.get("rescale_acts_by_decoder_norm", False)):
         return w
     norms = w["W_dec"].norm(dim=-1)
     return {

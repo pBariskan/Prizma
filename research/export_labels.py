@@ -57,10 +57,11 @@ def clean(text: str) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--model-dir", type=Path, default=REPO_ROOT / "artifacts" / "models" / "gpt2-l6")
+    ap.add_argument("--folder", default="sae", help="SAE folder inside model-dir (see export_sae.py --folder)")
     ap.add_argument("--neuronpedia", default=None, help="override the id from the SAE manifest")
     args = ap.parse_args()
 
-    sae_dir = args.model_dir / "sae"
+    sae_dir = args.model_dir / args.folder
     manifest = json.loads((sae_dir / "manifest.json").read_text())
     neuronpedia_id = args.neuronpedia or manifest.get("neuronpedia")
     if not neuronpedia_id:
