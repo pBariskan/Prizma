@@ -85,6 +85,13 @@ explanation per feature (gpt-4o-mini where available) and writes `sae/labels.jso
 24,576 features have one. "Texts where it fires most" is a link to the feature's Neuronpedia page
 until Phase 1 produces our own examples.
 
+**Neuronpedia's concept labels are published with credit (Poyri, 2026-11-12).** `sae/labels.json`
+holds the explanations Neuronpedia publishes for the open SAE, and the site needs them until our
+own SAE and labels exist. The license of that export could not be confirmed, so the dataset card
+credits Neuronpedia and says the labels are not covered by the card's MIT tag. The alternative,
+unlabelled concepts with a link to Neuronpedia, was rejected because the Concepts view is hard to
+read without names.
+
 **D3 draws the attention lines; React draws everything else.** `d3-selection`, `d3-scale` and
 `d3-transition` only (about 30 KB), used for the data join and transitions of the arcs laid over
 the text. The default head is layer 4, head 11, a previous-token head whose lines are easy to read.
