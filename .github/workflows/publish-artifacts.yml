@@ -78,11 +78,12 @@ jobs:
             echo
             echo "Dataset: https://huggingface.co/datasets/$DATASET"
             echo
-            echo "Set the \`ARTIFACTS_URL\` repository variable to:"
+            echo "Address of the model files (\`ARTIFACTS_URL\`):"
             echo
             echo "\`$URL\`"
             echo
-            echo "Then re-run the *Deploy site to GitHub Pages* workflow."
+            echo "The site build uses the address in \`.github/workflows/pages.yml\`. If this one differs,"
+            echo "set it as the \`ARTIFACTS_URL\` repository variable and re-run *Deploy site to GitHub Pages*."
             echo
             echo '```json'
             cat ../artifacts/models/gpt2-l6/manifest.json

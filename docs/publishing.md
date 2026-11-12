@@ -2,12 +2,16 @@
 
 The site is static (GitHub Pages) and downloads the model from a public Hugging Face dataset.
 Two things have to exist before the live site works: the dataset with the files from
-`artifacts/models/`, and the `ARTIFACTS_URL` repository variable that tells the build where it is.
+`artifacts/models/`, and its address in the site build. The address is written in
+`.github/workflows/pages.yml`; the `ARTIFACTS_URL` repository variable replaces it when set.
+
+Live since 2026-11-12: site <https://pbariskan.github.io/Prizma/>, model files
+<https://huggingface.co/datasets/poyri/prizma-artifacts>.
 
 ```
 research/ export  ──▶  artifacts/models/  ──▶  Hugging Face dataset  ◀── fetch ──  browser
                                                        ▲
-web/ build (VITE_ARTIFACTS_URL = ARTIFACTS_URL) ──▶ GitHub Pages ──────────────────┘
+web/ build (VITE_ARTIFACTS_URL) ──────────────────▶ GitHub Pages ──────────────────┘
 ```
 
 ## One-time setup
@@ -19,12 +23,16 @@ web/ build (VITE_ARTIFACTS_URL = ARTIFACTS_URL) ──▶ GitHub Pages ───
 2. **GitHub Pages.** At <https://github.com/pBariskan/Prizma/settings/pages> set *Source* to
    **GitHub Actions**. Pages on a private repository needs GitHub Pro (free with the GitHub
    Student Developer Pack); otherwise the repository has to be public.
-3. **Publish the artifacts** (next section), then set the `ARTIFACTS_URL` repository variable at
-   <https://github.com/pBariskan/Prizma/settings/variables/actions/new> to the URL the workflow
-   prints: `https://huggingface.co/datasets/<hf-user>/prizma-artifacts/resolve/main/models`.
-4. **Deploy.** Re-run *Deploy site to GitHub Pages* at
-   <https://github.com/pBariskan/Prizma/actions/workflows/pages.yml> (the variable is read at build
-   time). The site is then at <https://pbariskan.github.io/Prizma/>.
+3. **Publish the artifacts** (next section). The workflow prints the address of the files:
+   `https://huggingface.co/datasets/<hf-user>/prizma-artifacts/resolve/main/models`.
+4. **Point the site at them.** Nothing to do while the files stay in
+   `poyri/prizma-artifacts`: that address is the default in `.github/workflows/pages.yml`.
+   For another dataset (a fork, a second Hugging Face account) set the `ARTIFACTS_URL` repository
+   variable at <https://github.com/pBariskan/Prizma/settings/variables/actions/new> to the printed
+   address; it wins over the default.
+5. **Deploy.** Every push to `main` deploys. To deploy without a push, re-run *Deploy site to
+   GitHub Pages* at <https://github.com/pBariskan/Prizma/actions/workflows/pages.yml> (the address
+   is read at build time). The site is then at <https://pbariskan.github.io/Prizma/>.
 
 ## Publishing the artifacts
 
@@ -36,8 +44,8 @@ It exports GPT-2 with real weights on the runner, refuses to continue if the exp
 Hugging Face (`--min-top1`), adds the concept dictionary (`sae/`, the open GPT-2 SAE, checked with
 `--min-ev`), its labels from Neuronpedia and the precomputed example (`demo.json`), and uploads
 `artifacts/models/` to `<token owner>/prizma-artifacts` (created as a public dataset on the first
-run). The run summary shows the `ARTIFACTS_URL` value and the manifest with the verification
-numbers. The model export takes about 5 minutes; the SAE, labels and example add a few more.
+run). The run summary shows the address of the files and the manifest with the verification
+numbers. The whole run took about 4 minutes on 2026-11-12 (257 MB uploaded).
 
 The steps for the concept dictionary need nothing extra from you: no token, no setting.
 
@@ -76,5 +84,5 @@ every visit.
   model is ready. If the tab says the model has no concept dictionary, `<ARTIFACTS_URL>/gpt2-l6/sae/manifest.json`
   was not uploaded.
 - If the header says the model did not load (the reason is under the prompt), open
-  `<ARTIFACTS_URL>/gpt2-l6/manifest.json` in a browser tab: a 404 there means the variable or the
+  `<ARTIFACTS_URL>/gpt2-l6/manifest.json` in a browser tab: a 404 there means the address or the
   upload is wrong.

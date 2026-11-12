@@ -33,9 +33,9 @@ jobs:
       - run: npm run build
         env:
           VITE_BASE: /${{ github.event.repository.name }}/
-          # Model files live on a CDN (e.g. a Hugging Face dataset), not in the repo.
-          # Set the ARTIFACTS_URL repository variable to its artifacts/models URL.
-          VITE_ARTIFACTS_URL: ${{ vars.ARTIFACTS_URL }}
+          # Model files live in a public Hugging Face dataset, not in the repo (docs/publishing.md).
+          # The ARTIFACTS_URL repository variable, when set, replaces this address.
+          VITE_ARTIFACTS_URL: ${{ vars.ARTIFACTS_URL || 'https://huggingface.co/datasets/poyri/prizma-artifacts/resolve/main/models' }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: web/dist

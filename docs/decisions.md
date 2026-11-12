@@ -2,6 +2,20 @@
 
 Short records of choices that are not obvious from the code. Newest first.
 
+## 2026-11-12: Public repository, live site, dataset address in the workflow
+
+Poyri made the repository public and switched GitHub Pages on (source: GitHub Actions). The site
+is at <https://pbariskan.github.io/Prizma/>; the model files are in the public dataset
+<https://huggingface.co/datasets/poyri/prizma-artifacts>, exported and uploaded by the
+*Publish model artifacts* workflow on a GitHub runner. Before the switch every branch and commit
+was searched for tokens, keys and credential files; there were none.
+
+**The dataset address is the default in `pages.yml`; the `ARTIFACTS_URL` variable only replaces
+it.** The address used to exist only as a repository variable. It is public, it changes only when
+the files move to another dataset, and a variable is a setting that nobody sees in the code: a
+fork, or a repository whose variable was deleted, built a site that could not load its model.
+Now a build with no settings works, and a fork that publishes its own files sets the variable.
+
 ## 2026-11-12: One view at a time (page redesign)
 
 Poyri's feedback on the first Phase 2 page: it was a stack of boxes, it showed everything at once,
