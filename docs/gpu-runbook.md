@@ -168,18 +168,23 @@ Mac: `uv run hf download <your-hf-user>/prizma-sae-gpt2-l6 --local-dir research/
 
 ## 6. Put it on the site
 
-The site reads the SAE from `artifacts/models/gpt2-l6/sae/`. With the Phase 2 export script
-(`research/export_sae.py`, on the Phase 2 branch until it merges):
+The site reads an SAE from a folder in `artifacts/models/gpt2-l6/`. With the Phase 2 export script
+(`research/export_sae.py`, in pull request #2 until it merges), first put ours next to the open
+SAE and compare the two in the browser:
 
 ```bash
 cd research
-mkdir -p ../artifacts/models/gpt2-l6/sae
-cp -r runs/gpt2-l6-topk16384-k32/web/sae/. ../artifacts/models/gpt2-l6/sae/   # labels.json, concepts/
-uv run python export_sae.py --sae-path runs/gpt2-l6-topk16384-k32     # weights; lists labels.json in the manifest
+mkdir -p ../artifacts/models/gpt2-l6/sae-own
+cp -r runs/gpt2-l6-topk16384-k32/web/sae/. ../artifacts/models/gpt2-l6/sae-own/   # labels.json, concepts/
+uv run python export_sae.py --sae-path runs/gpt2-l6-topk16384-k32 --folder sae-own
 ```
 
-Copy the labels first: `export_sae.py` only lists a `labels.json` that is already there and has
-one entry per concept. Then upload `artifacts/` to the CDN as for Phase 0. No web code changes.
+Open the site with `?sae=sae-own` to use our SAE; without the parameter it still uses the open
+one in `sae/`. Copy the labels before the export: `export_sae.py` only lists a `labels.json` that
+is already in the folder and has one entry per concept.
+
+To replace the open SAE for everyone, do the same two steps with `sae` as the folder (leave out
+`--folder`), then upload `artifacts/` to the CDN as for Phase 0. No web code changes.
 
 ## If something goes wrong
 
