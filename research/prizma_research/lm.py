@@ -31,6 +31,25 @@ TINY_SPLIT_LAYER = 2
 DEFAULT_SPLIT_LAYER = 6
 
 
+def _gpt2_byte_of_char() -> dict[str, int]:
+    """GPT-2's byte-level BPE spells every byte as one printable character; this is the way back.
+
+    Same table as ``bytes_to_unicode`` in OpenAI's ``encoder.py``, inverted.
+    """
+    byte_values = [*range(ord("!"), ord("~") + 1), *range(ord("¡"), ord("¬") + 1), *range(ord("®"), ord("ÿ") + 1)]
+    chars = byte_values[:]
+    extra = 0
+    for b in range(256):
+        if b not in byte_values:
+            byte_values.append(b)
+            chars.append(256 + extra)
+            extra += 1
+    return {chr(c): b for b, c in zip(byte_values, chars)}
+
+
+_GPT2_BYTE_OF_CHAR = _gpt2_byte_of_char()
+
+
 class Tokenizer(Protocol):
     def encode(self, text: str) -> list[int]: ...
     def decode(self, ids: list[int]) -> str: ...
@@ -47,6 +66,9 @@ class ByteTokenizer:
 
     def decode(self, ids: list[int]) -> str:
         return "".join("<|endoftext|>" if i == EOT_ID else chr(i) if 32 <= i < 127 else "�" for i in ids)
+
+    def token_bytes(self, token_id: int) -> bytes:
+        return b"<|endoftext|>" if token_id == EOT_ID else bytes([token_id % 256])
 
 
 @dataclass
@@ -69,9 +91,20 @@ class LM:
     def device(self) -> torch.device:
         return self.gpt.wte.weight.device
 
-    def token_strings(self, ids: list[int]) -> list[str]:
-        """One display string per token (what the site shows for each token)."""
-        return [self.tokenizer.decode([i]) for i in ids]
+    def token_bytes(self, token_id: int) -> bytes:
+        """The UTF-8 bytes one token stands for.
+
+        Not ``tokenizer.decode([id])``: GPT-2 splits most non-ASCII characters (curly quotes, dashes,
+        accents) over two or three tokens, and decoding such a token alone gives "�". With the bytes,
+        ``examples.merge_utf8`` can put the character back together.
+        """
+        if isinstance(self.tokenizer, ByteTokenizer):
+            return self.tokenizer.token_bytes(token_id)
+        token = self.tokenizer.convert_ids_to_tokens(token_id)
+        try:
+            return bytes(_GPT2_BYTE_OF_CHAR[c] for c in token)
+        except KeyError:  # not a byte-level token (an added special token)
+            return token.encode("utf-8")
 
 
 def load_lm(model: str = "gpt2", *, random: bool = False, tiny: bool = False, layer: int | None = None,

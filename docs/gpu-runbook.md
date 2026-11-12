@@ -16,11 +16,16 @@ The original plan budgeted $10-40 for the GPU and $20-50 for labeling. Both are 
 job is small for a modern GPU, and Claude Haiku 5.5 through the Batch API costs $0.05 per million
 input tokens and $0.25 per million output tokens.
 
-What is not verified: the development environment cannot reach huggingface.co, so the pipeline
-has only ever run on a random-weight model with synthetic text (`--random --tiny`, 32 tests). Real
-GPT-2, OpenWebText and the open SAE are first touched by the smoke test in step 2, which takes a
-few minutes and fails early if something is wrong. The time estimates below are calculated, not
-measured; the training log prints the measured speed and the minutes left after its first 100 steps.
+What has been checked: the whole pipeline runs offline on a random-weight model (33 tests), and
+on 2026-11-12 the smoke test of step 2 (`run_phase1.py --tiny`) ran end to end on a CPU with real
+GPT-2, real OpenWebText and the open SAE, in 24 minutes. In that run our evaluation measured the
+open SAE at 0.87 explained variance, an L0 of 50 and 98.5% of the LM loss recovered, in line with
+the 0.9 and 51 that SAELens lists for it. That is good evidence that the evaluation and the
+handling of the open SAE's centered input are right.
+
+What has not been checked: the speed on a GPU and a real call to the Claude API. The time
+estimates below are calculated, not measured; the training log prints the measured speed and the
+minutes left after its first 100 steps. The pilot in step 4 is the first real labeling request.
 
 ## 1. Which provider and GPU
 

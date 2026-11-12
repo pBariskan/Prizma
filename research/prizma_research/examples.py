@@ -11,8 +11,11 @@ plus a small pool of contexts with every concept's peak activation on them, from
 scoring pass draws examples where a concept is known not to fire.
 
 Everything is stored as tensors in ``examples.safetensors`` next to ``meta.json`` and
-``vocab.json`` (token id -> display string), so ``autointerp.py`` needs neither the model nor the
-tokenizer.
+``vocab.json`` (token id -> text), so ``autointerp.py`` needs neither the model nor the tokenizer.
+
+GPT-2 splits most non-ASCII characters over several tokens. ``vocab.json`` therefore keeps the
+bytes of every token (bytes that are not valid UTF-8 on their own are stored as surrogate escapes),
+and ``merge_utf8`` joins the tokens of such a character when an example is cut out.
 """
 
 from __future__ import annotations
@@ -26,6 +29,42 @@ import torch
 EXAMPLES_FILE = "examples.safetensors"
 META_FILE = "meta.json"
 VOCAB_FILE = "vocab.json"
+
+
+def vocab_entry(token_bytes: bytes) -> str:
+    """Token bytes as the string stored in ``vocab.json`` (reversible, also for partial characters)."""
+    return token_bytes.decode("utf-8", errors="surrogateescape")
+
+
+def merge_utf8(tokens: list[str], acts: list[float]) -> tuple[list[str], list[float]]:
+    """Vocab entries of consecutive tokens -> display strings, one per complete piece of text.
+
+    Tokens that only hold part of a character are joined with the following ones until the bytes
+    decode; the joined entry gets the largest activation of its parts. A character cut by the edge
+    of the window is dropped if the concept does not fire on it, and shown as "�" if it does.
+    """
+    out_tokens: list[str] = []
+    out_acts: list[float] = []
+    pending, pending_act = b"", 0.0
+    for token, act in zip(tokens, acts):
+        pending += token.encode("utf-8", errors="surrogateescape")
+        pending_act = max(pending_act, act)
+        try:
+            text = pending.decode("utf-8")
+        except UnicodeDecodeError as error:
+            if error.reason == "unexpected end of data" and len(pending) < 8:
+                continue  # the rest of the character is in the next token
+            text = pending.decode("utf-8", errors="replace")
+            if not out_tokens and pending_act <= 0:
+                text = text.lstrip("�")  # the tail of a character that began before the window
+        if text:
+            out_tokens.append(text)
+            out_acts.append(pending_act)
+        pending, pending_act = b"", 0.0
+    if pending and pending_act > 0:  # a character that continues after the window
+        out_tokens.append(pending.decode("utf-8", errors="replace"))
+        out_acts.append(pending_act)
+    return out_tokens, out_acts
 
 
 class ExampleCollector:
@@ -145,7 +184,8 @@ class Examples:
         folder = Path(folder)
         folder.mkdir(parents=True, exist_ok=True)
         save_file(self.data, str(folder / EXAMPLES_FILE))
-        (folder / VOCAB_FILE).write_text(json.dumps({str(k): v for k, v in self.vocab.items()}, ensure_ascii=False))
+        # ASCII-only JSON: the surrogate escapes of partial characters cannot be written as UTF-8.
+        (folder / VOCAB_FILE).write_text(json.dumps({str(k): v for k, v in self.vocab.items()}))
         (folder / META_FILE).write_text(json.dumps(self.meta, indent=2) + "\n")
 
     @property
@@ -156,7 +196,7 @@ class Examples:
         tokens = self.data["tokens"][ctx]
         start, end = max(1, peak - before), min(len(tokens), peak + after + 1)  # position 0 is BOS
         values = [0.0] * (end - start) if acts is None else [round(float(a), 3) for a in acts[start:end]]
-        return Example([self.vocab.get(int(t), "�") for t in tokens[start:end]], values, ctx)
+        return Example(*merge_utf8([self.vocab.get(int(t), "�") for t in tokens[start:end]], values), ctx)
 
     def _stored(self, ctx_key: str, acts_key: str, feature: int, before: int, after: int) -> list[Example]:
         ctxs, acts = self.data[ctx_key][feature], self.data[acts_key][feature].float()

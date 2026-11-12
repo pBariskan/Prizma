@@ -108,6 +108,9 @@ def main(argv: list[str] | None = None) -> int:
                    + ", ".join(f"{name} {'ok' if ok else 'FAILS'}" for name, ok in checks.items()) + ")", ""]
         if lm.random:
             report += ["The baseline of this offline run is an untrained SAE, so the gate only exercises the code.", ""]
+        elif args.tiny:
+            report += ["This is a --tiny run: a small SAE trained for minutes. It is not expected to pass the gate; "
+                       "it only shows that every step works.", ""]
     write_json(out / "eval.json", result)
     (out / "eval.md").write_text("\n".join(report))
     print("\n" + "\n".join(report[2:]))

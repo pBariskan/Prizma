@@ -20,7 +20,7 @@ import torch
 
 from prizma_research.common import RUNS_DIR, add_model_args, fill_defaults, load_lm_from_args
 from prizma_research.data import EXAMPLES_DATA_FILES, add_data_args, iter_contexts, iter_token_batches
-from prizma_research.examples import ExampleCollector, Examples
+from prizma_research.examples import ExampleCollector, Examples, vocab_entry
 from prizma_research.lm import EOT_ID, resid_at
 from prizma_research.sae import load_sae
 
@@ -91,7 +91,7 @@ def main(argv: list[str] | None = None) -> int:
         "mean_l0": float(density.sum()),
         "seconds": time.time() - started,
     }
-    Examples(data, {i: lm.tokenizer.decode([i]) for i in ids}, meta).save(out)
+    Examples(data, {i: vocab_entry(lm.token_bytes(i)) for i in ids}, meta).save(out)
     print(f"Wrote {out} in {meta['seconds'] / 60:.1f} min: {collector.n_contexts} contexts, "
           f"mean L0 {meta['mean_l0']:.1f}, {meta['never_fired']} of {sae.d_sae} concepts never fired")
     return 0

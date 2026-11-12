@@ -36,6 +36,12 @@ math (`relu` or top-k of `(x - b_dec) @ W_enc + b_enc`). Evaluation and example 
 instead of SAELens, every training run ends by comparing the two on fresh activations, and the
 SAELens folder (`cfg.json` + `sae_weights.safetensors`) is what `export_sae.py` converts for the site.
 
+**Examples keep token bytes, not token strings.** GPT-2 splits most non-ASCII characters (curly
+quotes, dashes, accented letters) over two or three tokens, and a token decoded alone shows as "�".
+`collect_top.py` stores the bytes of every token and `examples.merge_utf8` joins the tokens of such
+a character when an example is cut out, giving the joined piece the largest activation of its parts.
+Found by the first run on real text; 344 of GPT-2's 50,257 tokens hold part of a character.
+
 **Training runs live in `research/runs/`, not in `artifacts/`.** They hold checkpoints, logs,
 examples and API state that the site never downloads. Neither folder is committed.
 

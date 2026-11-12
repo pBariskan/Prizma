@@ -71,3 +71,37 @@ def test_examples_windows_and_negatives(tmp_path):
     for e in ex.negatives(2, 5, seed=0, before=3, after=1):
         assert float(ex.data["pool_max_act"][2, e.context]) == 0 and set(e.acts) == {0.0}
     assert ex.top(0) == [] and ex.stats(0)["density"] == 0
+
+
+def test_characters_split_across_tokens_are_put_back_together(tmp_path):
+    """The offline tokenizer has one token per byte, so every non-ASCII character is split, as in GPT-2."""
+    from prizma_research.examples import merge_utf8, vocab_entry
+    from prizma_research.lm import ByteTokenizer
+
+    tokenizer = ByteTokenizer()
+    text = "don’t 🙂 é"
+    ids = tokenizer.encode(text)
+    entries = [vocab_entry(tokenizer.token_bytes(i)) for i in ids]
+    acts = [0.0] * len(ids)
+    acts[3] = 2.0  # "’" is bytes 3, 4, 5: the concept fires on its first and last byte
+    acts[5] = 5.0
+    tokens, merged = merge_utf8(entries, acts)
+    assert tokens == ["d", "o", "n", "’", "t", " ", "🙂", " ", "é"] and "".join(tokens) == text
+    assert merged == [0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # the largest activation of its parts
+    # A character cut by the edge of the window is dropped, unless the concept fires on what is left of it.
+    assert merge_utf8(entries[4:8], [0.0] * 4) == (["t", " "], [0.0, 0.0])
+    assert merge_utf8(entries[2:4], [0.0] * 2) == (["n"], [0.0])
+    assert merge_utf8(entries[2:4], [0.0, 3.0]) == (["n", "�"], [0.0, 3.0])
+    assert merge_utf8(entries[5:7], [3.0, 0.0]) == (["�", "t"], [3.0, 0.0])
+
+    # The vocabulary survives a save and load although single bytes are not valid UTF-8.
+    n_ctx, T = 6, len(ids) + 1
+    tokens_tensor = torch.tensor([[50256, *ids]] * n_ctx)
+    acts_tensor = torch.zeros(n_ctx, T, 2)
+    acts_tensor[:, 6, 1] = torch.arange(1, n_ctx + 1).float()  # concept 1 fires on the last byte of "’"
+    data = collect(acts_tensor, tokens_tensor, batch=3, top_k=3, n_sample=2, pool_size=4)
+    vocab = {i: vocab_entry(tokenizer.token_bytes(i)) for i in set(ids)} | {50256: "<|endoftext|>"}
+    Examples(data, vocab, {}).save(tmp_path)
+    best = Examples.load(tmp_path).top(1, before=24, after=20)[0]
+    assert "".join(best.tokens) == text and best.tokens[3] == "’" and best.acts[3] == best.peak == 6.0
+    assert "".join(Examples.load(tmp_path).top(1, before=24, after=8)[0].tokens) == "don’t 🙂 "  # "é" is cut: dropped
