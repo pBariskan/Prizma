@@ -12,6 +12,9 @@
     "export-demo": "tsx scripts/export-demo.ts"
   },
   "dependencies": {
+    "@fontsource-variable/fraunces": "^5.3.0",
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource-variable/jetbrains-mono": "^5.3.0",
     "d3-scale": "^4.0.3",
     "d3-selection": "^3.0.1",
     "d3-transition": "^3.0.2",

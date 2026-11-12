@@ -1,8 +1,11 @@
 /** Share links: everything needed to reproduce what is on screen lives in the URL. */
 import type { RunKey } from './run'
 
-export type View = 'next' | 'attention' | 'concepts'
-export const VIEWS: View[] = ['next', 'attention', 'concepts']
+/** The four views of a text, in the order the page walks through them. */
+export type View = 'next' | 'attention' | 'concepts' | 'steer'
+export const VIEWS: View[] = ['next', 'attention', 'concepts', 'steer']
+/** The views that look inside one text at one token. `steer` compares two texts instead. */
+export type Lens = Exclude<View, 'steer'>
 
 export interface ShareState {
   prompt: string

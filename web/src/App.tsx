@@ -2,15 +2,20 @@ import { useEffect, useEffectEvent, useMemo, useReducer, useRef, useState } from
 import { ModelClient } from './engine/client'
 import { saeFeatureOf, saeVectorId, type SaeManifest, type SteerSpec, type SteeringFile } from './engine/protocol'
 import { demoToRun, isDemoFile } from './state/demo'
-import { attentionRow, featureActivations, firstGenerated, isBusy, NO_RUNS, runsReducer, type Run, type RunKey } from './state/run'
-import { buildShare, parseShare, VIEWS, type View } from './state/share'
+import { attentionRow, featureActivations, firstGenerated, isBusy, NO_RUNS, runsReducer, type RunKey } from './state/run'
+import { buildShare, parseShare, type Lens, type View } from './state/share'
 import { AttentionPanel } from './views/AttentionPanel'
+import { Mark, PrismFigure } from './views/Brand'
+import { Composer } from './views/Composer'
 import { ConceptsPanel, type SaeStatus } from './views/ConceptsPanel'
+import { signed } from './views/format'
+import { LensTabs } from './views/LensTabs'
 import { NextWordPanel } from './views/NextWordPanel'
-import { StatusPanel, type ModelStatus } from './views/StatusPanel'
+import { LoadingStrip, StatusPill, type ModelStatus } from './views/StatusPanel'
 import { SteeringPanel } from './views/SteeringPanel'
 import { TokenStream } from './views/TokenStream'
 import { TokenText } from './views/TokenText'
+import { VIEW_INFO } from './views/viewInfo'
 
 const ARTIFACTS_URL = import.meta.env.VITE_ARTIFACTS_URL || `${import.meta.env.BASE_URL}artifacts/models`
 const query = new URLSearchParams(location.search)
@@ -26,7 +31,26 @@ const shared = parseShare(location.search)
 // One worker for the whole page (module scope survives React StrictMode double-mounting).
 const client = new ModelClient()
 
-const VIEW_NAMES: Record<View, string> = { next: 'Next word', attention: 'Attention', concepts: 'Concepts' }
+/** The page without what a share link adds, for the name in the header. */
+const HOME = (() => {
+  const keep = new URLSearchParams()
+  for (const key of ['model', 'sae', 'backend']) {
+    const value = query.get(key)
+    if (value !== null) keep.set(key, value)
+  }
+  return `${location.pathname}${keep.size > 0 ? `?${keep}` : ''}`
+})()
+
+/** Where each view that looks inside one text leads next. */
+const NEXT_VIEW: Record<Lens, View> = { next: 'attention', attention: 'concepts', concepts: 'steer' }
+
+const DEFAULT_PROMPT = 'I have some big news:'
+/** Starts that give a readable continuation with greedy decoding (many short prompts just loop). */
+const EXAMPLES = [
+  'The best advice my grandmother ever gave me was',
+  'Scientists were surprised to discover that',
+  'The wedding was held in Paris on a rainy Saturday in June',
+]
 /** How long the slider has to rest before the text is regenerated. */
 const STEER_DEBOUNCE_MS = 250
 /**
@@ -69,7 +93,7 @@ export default function App() {
   const [demoLabels, setDemoLabels] = useState<Record<string, string>>({})
   const [showingDemo, setShowingDemo] = useState(false)
 
-  const [prompt, setPrompt] = useState(shared.prompt ?? 'I have some big news:')
+  const [prompt, setPrompt] = useState(shared.prompt ?? DEFAULT_PROMPT)
   const [maxNew, setMaxNew] = useState(shared.maxNew ?? 20)
   const [vectorId, setVectorId] = useState(shared.vector ?? '')
   const [strength, setStrength] = useState(shared.strength ?? 1)
@@ -79,7 +103,11 @@ export default function App() {
 
   /** The token the visitor clicked; until they click, the first generated word is selected. */
   const [picked, setPicked] = useState(shared.selection ?? null)
+  /** The token under the pointer: the views follow it while it is over the text. */
+  const [hover, setHover] = useState<{ run: RunKey; pos: number } | null>(null)
   const [view, setView] = useState<View>(shared.view ?? 'next')
+  /** The last view that looked inside one text: where a click on a word in the Steering view leads. */
+  const [lens, setLens] = useState<Lens>(shared.view && shared.view !== 'steer' ? shared.view : 'next')
   const [head, setHead] = useState({ layer: shared.layer ?? 4, head: shared.head ?? 11 })
   const [pinned, setPinned] = useState<number | null>(shared.concept ?? null)
 
@@ -183,19 +211,26 @@ export default function App() {
     dispatch({ type: 'clear', key: 'steered' })
   }
 
-  function generate(keepSelection = false) {
+  function generate(text = prompt, keepSelection = false) {
     started.current = true
     setError(null)
     setShowingDemo(false)
     dispatch({ type: 'reset' })
+    setHover(null)
     if (!keepSelection) setPicked(null)
-    setRan({ prompt, maxNew })
-    launch('original', prompt, maxNew, null)
-    launchSteered(prompt, maxNew)
+    setRan({ prompt: text, maxNew })
+    launch('original', text, maxNew, null)
+    launchSteered(text, maxNew)
+  }
+
+  function openView(next: View) {
+    setView(next)
+    setHover(null)
+    if (next !== 'steer') setLens(next)
   }
 
   // A link with a prompt runs once the model is ready, with the selection the link carries.
-  const runSharedLink = useEffectEvent(() => generate(true))
+  const runSharedLink = useEffectEvent(() => generate(prompt, true))
   useEffect(() => {
     if (ready && !started.current && shared.prompt) runSharedLink()
   }, [ready])
@@ -215,10 +250,11 @@ export default function App() {
     return () => clearTimeout(timer)
   }, [ready, ran, vectorId, strength])
 
-  const selection = useMemo(
-    () => picked ?? (runs.original?.analysis ? { run: 'original' as const, pos: firstGenerated(runs.original.tokens) } : null),
-    [picked, runs.original],
-  )
+  // A selection in the steered text only counts while there is a steered text.
+  const selection = useMemo(() => {
+    if (picked && (picked.run === 'original' ? runs.original : runs.steered)) return picked
+    return runs.original?.analysis ? { run: 'original' as const, pos: firstGenerated(runs.original.tokens) } : null
+  }, [picked, runs.original, runs.steered])
 
   /** The link that reproduces what is on screen. */
   const shareSearch = useMemo(
@@ -247,9 +283,16 @@ export default function App() {
     (feature !== null ? `${labelOf(feature) ?? 'Concept'} (#${feature})` : null)
   const range = rangeOf(vectorId, steering)
 
-  const selectedRun = selection ? runs[selection.run] : null
-  const pos = selection && selectedRun && selection.pos < selectedRun.tokens.length ? selection.pos : null
-  const analysis = selectedRun?.analysis ?? null
+  // The views that look inside show one text at a time: the one the selected word is in.
+  const inspecting = view !== 'steer'
+  const shownKey: RunKey = selection?.run ?? 'original'
+  const shownRun = runs[shownKey]
+  const within = (p: number) => shownRun !== null && p < shownRun.tokens.length
+  const lockedPos = selection && within(selection.pos) ? selection.pos : null
+  /** The word the view is about: the one under the pointer, else the one that was clicked. */
+  const pos = inspecting && hover && hover.run === shownKey && within(hover.pos) ? hover.pos : lockedPos
+  const focusToken = shownRun && pos !== null ? shownRun.tokens[pos] : null
+  const analysis = shownRun?.analysis ?? null
   const layer = analysis ? Math.min(head.layer, analysis.nLayer - 1) : head.layer
   const headIndex = analysis ? Math.min(head.head, analysis.nHead - 1) : head.head
 
@@ -257,6 +300,7 @@ export default function App() {
     () => (view === 'attention' && analysis && pos !== null && pos < analysis.length ? attentionRow(analysis, layer, headIndex, pos) : null),
     [view, analysis, pos, layer, headIndex],
   )
+  // Both texts share one scale, so switching between them shows where the concept got stronger.
   const conceptTint = useMemo(() => {
     if (view !== 'concepts' || pinned === null) return null
     const acts = (['original', 'steered'] as const).map((k) => {
@@ -267,20 +311,37 @@ export default function App() {
     return { original: acts[0]?.map((v) => v / max) ?? null, steered: acts[1]?.map((v) => v / max) ?? null }
   }, [view, pinned, runs])
 
-  const stream = (key: RunKey, run: Run | null, placeholder: string) => (
+  const busy = isBusy(runs)
+  const steerOn = steerKey(vectorId, strength) !== ''
+  const steerSummary = steerOn && vectorLabel ? `${vectorLabel} at ${signed(strength)}` : null
+
+  const stream = (key: RunKey, placeholder: string) => (
     <TokenStream
-      run={run}
+      run={runs[key]}
       placeholder={placeholder}
-      selected={selection?.run === key ? pos : null}
-      onSelect={(p) => setPicked({ run: key, pos: p })}
-      tint={view === 'attention' ? (selection?.run === key ? attention : null) : (conceptTint?.[key] ?? null)}
-      arcs={selection?.run === key ? attention : null}
+      selected={inspecting ? lockedPos : null}
+      focus={inspecting ? pos : null}
+      onSelect={(p) => {
+        setPicked({ run: key, pos: p })
+        // In the Steering view a click on a word opens it in the view that was used last.
+        if (!inspecting) openView(lens)
+      }}
+      onHover={inspecting ? (p) => setHover(p === null ? null : { run: key, pos: p }) : undefined}
+      tooltip={!inspecting}
+      tint={!inspecting ? null : view === 'attention' ? attention : (conceptTint?.[key] ?? null)}
+      arcs={inspecting ? attention : null}
       stale={runs.queued[key] !== undefined}
     />
   )
+  const originalPlaceholder = ready ? 'Write the first words above and press Generate.' : 'The model is still loading.'
 
-  const busy = isBusy(runs)
-  const steerOn = steerKey(vectorId, strength) !== ''
+  /** Shows the other text, at the same word when it has one. */
+  function showRun(key: RunKey) {
+    const target = runs[key]
+    if (!target || key === shownKey) return
+    setHover(null)
+    setPicked({ run: key, pos: lockedPos !== null && lockedPos < target.tokens.length ? lockedPos : firstGenerated(target.tokens) })
+  }
 
   async function copyLink() {
     if (!shareSearch) return
@@ -294,139 +355,189 @@ export default function App() {
   }
 
   return (
-    <main>
-      <header>
-        <div>
-          <h1>Prizma</h1>
-          <p className="tagline">
-            A small language model running entirely in your browser, split open in the middle so you can see what it
-            is thinking and push on it.
-          </p>
-        </div>
-        {ready && <StatusPanel status={status} model={MODEL} showingDemo={showingDemo} msPerToken={msPerToken} />}
-      </header>
-
-      {!ready && <StatusPanel status={status} model={MODEL} showingDemo={showingDemo} msPerToken={msPerToken} />}
-
-      <section className="panel controls">
-        <label className="field">
-          <span>Your text</span>
-          <textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && ready && prompt.trim()) generate()
-            }}
-            rows={2}
-          />
-        </label>
-        <div className="row">
-          <label className="field grow">
-            <span>
-              Words to add <output>{maxNew} tokens</output>
-            </span>
-            <input type="range" min={1} max={40} value={maxNew} onChange={(e) => setMaxNew(Number(e.target.value))} />
-          </label>
-          <button type="button" onClick={() => generate()} disabled={!ready || !prompt.trim()}>
-            {!ready ? 'Loading model…' : busy ? 'Generating…' : 'Generate'}
-          </button>
-          <button type="button" className="ghost" onClick={copyLink} disabled={!shareSearch} title="Copy a link that reproduces this text, concept and slider">
+    <div className="page" data-view={view}>
+      <header className="masthead">
+        <a className="brand" href={HOME}>
+          <Mark />
+          Prizma
+        </a>
+        <div className="masthead-side">
+          <StatusPill status={status} msPerToken={msPerToken} />
+          <button type="button" className="quiet" onClick={copyLink} disabled={!shareSearch} title="Copy a link that reproduces this text, concept and slider">
             {copied ? 'Link copied' : 'Copy link'}
           </button>
         </div>
-        {error && <p className="error">{error}</p>}
+      </header>
+
+      <section className="hero">
+        <div className="hero-text">
+          <h1>
+            See what a language model is <em>thinking</em>.
+          </h1>
+          <p>
+            Prizma runs a small language model right here in your browser and opens it up halfway through. Read{' '}
+            <span className="ray-next">the words it almost chose</span>, follow <span className="ray-attention">where it looked</span>, name{' '}
+            <span className="ray-concepts">the concepts it had in mind</span>, then <span className="ray-steer">push on one</span> and watch the
+            text change.
+          </p>
+        </div>
+        <PrismFigure />
       </section>
 
-      <SteeringPanel
-        vectors={steering?.vectors ?? []}
-        vectorId={vectorId}
-        customLabel={vectorLabel}
-        onVector={(id) => {
-          setVectorId(id)
-          setStrength(startStrength(id, steering, strength))
-        }}
-        strength={strength}
-        range={range}
-        onStrength={setStrength}
-        disabled={!ready}
-        detail={vector?.detail ?? null}
-        url={vector?.url ?? null}
-      />
-
-      <section className="compare">
-        <div className="panel">
-          <h2>Original</h2>
-          {stream('original', runs.original, ready ? 'Type a text and press Generate.' : 'The model is still loading.')}
-        </div>
-        <div className="panel">
-          <h2>
-            Steered{' '}
-            {steerOn && vectorLabel && (
-              <small>
-                · {vectorLabel} at {strength > 0 ? '+' : ''}
-                {strength.toFixed(2)}×
-              </small>
-            )}
-          </h2>
-          {stream(
-            'steered',
-            runs.steered,
-            steerOn ? 'The steered text appears here.' : 'Steering is off. Move the strength slider to push the model towards a concept.',
+      <main className="bench">
+        <Composer prompt={prompt} onPrompt={setPrompt} maxNew={maxNew} onMaxNew={setMaxNew} examples={EXAMPLES} ready={ready} busy={busy} onGenerate={(text) => generate(text)}>
+          <LoadingStrip status={status} model={MODEL} showingDemo={showingDemo} />
+          {error && (
+            <p className="error" role="alert">
+              {error}
+            </p>
           )}
-        </div>
-      </section>
+        </Composer>
 
-      <section className="panel inspector">
-        <div className="inspector-head">
-          <div className="tabs" role="tablist" aria-label="Views">
-            {VIEWS.map((v) => (
-              <button key={v} type="button" role="tab" aria-selected={view === v} className={view === v ? 'tab active' : 'tab'} onClick={() => setView(v)}>
-                {VIEW_NAMES[v]}
-              </button>
-            ))}
+        <LensTabs view={view} onView={openView} />
+
+        {inspecting ? (
+          <div className="stage split" id="stage" role="tabpanel" aria-labelledby={`tab-${view}`}>
+            <section className="reading">
+              <div className="reading-head">
+                {runs.steered ? (
+                  <div className="run-toggle" role="group" aria-label="Which text to look inside">
+                    <button type="button" aria-pressed={shownKey === 'original'} onClick={() => showRun('original')}>
+                      Original
+                    </button>
+                    <button type="button" aria-pressed={shownKey === 'steered'} onClick={() => showRun('steered')}>
+                      Steered{steerSummary && <small> · {steerSummary}</small>}
+                    </button>
+                  </div>
+                ) : (
+                  <span className="eyebrow">What the model wrote</span>
+                )}
+              </div>
+              {stream(shownKey, originalPlaceholder)}
+              {shownRun && (
+                <p className="legend">
+                  <span className="swatch yours" /> your words <span className="swatch model" /> the model's words. Point at any word to look
+                  inside the model there; click or tap to keep it.
+                </p>
+              )}
+            </section>
+            <aside className="lens-panel" key={view}>
+              {!shownRun || pos === null || !focusToken ? (
+                <p className="hint">
+                  {busy ? 'The model is writing. Point at a word, or wait a moment for the first one to be picked.' : 'Nothing to look inside yet.'}
+                </p>
+              ) : (
+                <>
+                  <header className="focus-head">
+                    <span className="eyebrow">
+                      Word {pos} of the {shownKey === 'steered' ? 'steered' : 'original'} text ·{' '}
+                      {focusToken.kind === 'generated' ? 'written by the model' : focusToken.kind === 'bos' ? 'added by Prizma' : 'written by you'}
+                    </span>
+                    <span className="focus-token">
+                      {focusToken.kind === 'bos' ? <em>start of text</em> : focusToken.text.trim() ? focusToken.text.trim() : <TokenText text={focusToken.text} />}
+                    </span>
+                  </header>
+                  {view === 'next' ? (
+                    <NextWordPanel run={shownRun} pos={pos} />
+                  ) : view === 'attention' ? (
+                    <AttentionPanel
+                      run={shownRun}
+                      pos={pos}
+                      layer={layer}
+                      head={headIndex}
+                      splitLayer={status.kind === 'ready' ? status.manifest.split_layer : null}
+                      onPick={(l, h) => setHead({ layer: l, head: h })}
+                    />
+                  ) : (
+                    <ConceptsPanel
+                      run={shownRun}
+                      pos={pos}
+                      sae={sae}
+                      status={saeStatus}
+                      labelOf={labelOf}
+                      pinned={pinned}
+                      onPin={setPinned}
+                      canSteer={ready}
+                      onSteer={(f) => {
+                        setVectorId(saeVectorId(f))
+                        setStrength(SAE_START_STRENGTH)
+                        openView('steer')
+                      }}
+                    />
+                  )}
+                  <button type="button" className={`next-step ray-${NEXT_VIEW[view]}`} onClick={() => openView(NEXT_VIEW[view])}>
+                    <span>
+                      Next: <strong>{VIEW_INFO[NEXT_VIEW[view]].name}</strong>
+                    </span>
+                    <span className="muted">{VIEW_INFO[NEXT_VIEW[view]].question}</span>
+                    <span className="arrow" aria-hidden="true">
+                      →
+                    </span>
+                  </button>
+                </>
+              )}
+            </aside>
           </div>
-          {selectedRun && pos !== null && (
-            <span className="selected-token">
-              {selection!.run === 'steered' ? 'Steered' : 'Original'} text · token {pos} ·{' '}
-              {selectedRun.tokens[pos].kind === 'bos' ? <em>start</em> : <TokenText text={selectedRun.tokens[pos].text} />}
-            </span>
-          )}
-        </div>
-        {!selectedRun || pos === null ? (
-          <p className="hint">Click any word above to look inside the model at that point.</p>
-        ) : view === 'next' ? (
-          <NextWordPanel run={selectedRun} pos={pos} />
-        ) : view === 'attention' ? (
-          <AttentionPanel
-            run={selectedRun}
-            pos={pos}
-            layer={layer}
-            head={headIndex}
-            splitLayer={status.kind === 'ready' ? status.manifest.split_layer : null}
-            onPick={(l, h) => setHead({ layer: l, head: h })}
-          />
         ) : (
-          <ConceptsPanel
-            run={selectedRun}
-            pos={pos}
-            sae={sae}
-            status={saeStatus}
-            labelOf={labelOf}
-            pinned={pinned}
-            onPin={setPinned}
-            canSteer={ready}
-            onSteer={(f) => {
-              setVectorId(saeVectorId(f))
-              setStrength(SAE_START_STRENGTH)
-            }}
-          />
+          <div className="stage steer" id="stage" role="tabpanel" aria-labelledby="tab-steer">
+            <SteeringPanel
+              vectors={steering?.vectors ?? []}
+              vectorId={vectorId}
+              customLabel={vectorLabel}
+              onVector={(id) => {
+                setVectorId(id)
+                setStrength(startStrength(id, steering, strength))
+              }}
+              strength={strength}
+              range={range}
+              onStrength={setStrength}
+              disabled={!ready}
+              detail={vector?.detail ?? null}
+              url={vector?.url ?? null}
+            />
+            <div className="compare">
+              <section className="reading">
+                <div className="reading-head">
+                  <span className="eyebrow">Original</span>
+                </div>
+                {stream('original', originalPlaceholder)}
+              </section>
+              <section className="reading">
+                <div className="reading-head">
+                  <span className="eyebrow">Steered{steerSummary && <> · {steerSummary}</>}</span>
+                </div>
+                {stream('steered', steerOn ? 'The steered text appears here.' : 'Steering is off. Pick a concept above and move the slider.')}
+              </section>
+            </div>
+            {runs.original && (
+              <p className="legend">
+                Point at a word to see what else the model considered there. Click or tap it to look inside with {VIEW_INFO[lens].name}.
+              </p>
+            )}
+          </div>
         )}
-      </section>
+      </main>
 
       <footer>
-        Everything runs on your device: no text leaves your browser. The point is to see inside the model, not to judge
-        its writing: GPT-2 small is a 2019 model with 124M parameters.
+        <p>
+          Everything runs on your device: nothing you type leaves your browser. The point is to see inside the model, not
+          to judge its writing. GPT-2 small is a 2019 model with 124 million parameters.
+        </p>
+        <p>
+          Model: GPT-2 small by OpenAI.
+          {sae && <> Concepts: an open sparse autoencoder for its layer {sae.hook.match(/\d+/)?.[0]}.</>}
+          {sae?.neuronpedia && (
+            <>
+              {' '}
+              Concept names and examples:{' '}
+              <a href={`https://www.neuronpedia.org/${sae.neuronpedia}`} target="_blank" rel="noreferrer">
+                Neuronpedia
+              </a>
+              .
+            </>
+          )}
+        </p>
       </footer>
-    </main>
+    </div>
   )
 }

@@ -194,6 +194,13 @@ describe('share links', () => {
     expect(parseShare(search)).toEqual({ prompt: state.prompt, maxNew: 20, view: 'next' })
   })
 
+  it('carries the Steering view like the other views', () => {
+    const search = buildShare({ ...state, view: 'steer' }, '')
+    expect(new URLSearchParams(search).get('view')).toBe('steer')
+    expect(new URLSearchParams(search).has('head')).toBe(false)
+    expect(parseShare(search).view).toBe('steer')
+  })
+
   it('ignores malformed values', () => {
     expect(parseShare('?new=abc&strength=x&token=q9&view=nope&head=5&concept=-1')).toEqual({})
     expect(parseShare('?new=500&token=o4&strength=-0.5&vector=')).toEqual({

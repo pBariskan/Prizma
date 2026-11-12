@@ -6,3 +6,6 @@ export function percent(p: number): string {
 
 /** An SAE activation with about three significant digits. */
 export const activation = (a: number) => (a >= 100 ? a.toFixed(0) : a >= 10 ? a.toFixed(1) : a.toFixed(2))
+
+/** A steering strength in units of the typical residual norm, e.g. `+0.50×`. */
+export const signed = (strength: number) => `${strength > 0 ? '+' : strength < 0 ? '−' : ''}${Math.abs(strength).toFixed(2)}×`

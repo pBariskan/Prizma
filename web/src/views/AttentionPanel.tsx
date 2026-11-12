@@ -4,7 +4,7 @@ import { attentionRow, headFocus, type Run } from '../state/run'
 import { percent } from './format'
 import { TokenText } from './TokenText'
 
-/** Attention view controls: a layer x head grid to pick a head, and what that head looks at. */
+/** Attention view: what one head looks at from the token in focus, and a layer x head grid to pick another head. */
 export function AttentionPanel({
   run,
   pos,
@@ -34,37 +34,37 @@ export function AttentionPanel({
     .filter((t) => t.weight >= 0.005)
 
   return (
-    <div className="attention">
-      <div>
-        <HeadGrid a={a} focus={focus} layer={layer} head={head} splitLayer={splitLayer} onPick={onPick} />
-        <p className="hint">
-          Rows are layers (0 at the top), columns are heads. Brighter cells are heads that look hard at one
-          earlier token from here.
-          {splitLayer !== null && <> The gap is where Prizma reads concepts and steers (just before layer {splitLayer}).</>}
-        </p>
-      </div>
-      <div>
-        <p>
-          <strong>
-            Layer {layer}, head {head}
-          </strong>{' '}
-          {pos === 0 ? 'has only this token to look at.' : 'looks from the selected token at:'}
-        </p>
-        <ol className="attended">
-          {top.map(({ j, weight }) => (
-            <li key={j}>
+    <div className="lens-body attention">
+      <p className="lead">
+        To handle this word the model looks back at earlier ones. The lines on the text show where one of its{' '}
+        {a.nLayer * a.nHead} attention heads looks:{' '}
+        <strong>
+          layer {layer}, head {head}
+        </strong>
+        .
+      </p>
+      <ol className="attended">
+        {top.map(({ j, weight }) => (
+          <li key={j}>
+            <span className="attended-token">
               {run.tokens[j].kind === 'bos' ? <em>start</em> : <TokenText text={run.tokens[j].text} />}
               {j === pos && <span className="muted"> (itself)</span>}
-              <span className="bar-track">
-                <span className="bar" style={{ width: `${Math.max(1, weight * 100)}%` }} />
-              </span>
-              <span className="pct">{percent(weight)}</span>
-            </li>
-          ))}
-        </ol>
-        <p className="hint">
-          A head with nothing useful to find usually parks its attention on the first token, so heavy lines to the
-          start are normal.
+            </span>
+            <span className="bar-track">
+              <span className="bar" style={{ width: `${Math.max(1, weight * 100)}%` }} />
+            </span>
+            <span className="pct">{percent(weight)}</span>
+          </li>
+        ))}
+      </ol>
+      <div className="heads">
+        <p className="eyebrow">Pick another head</p>
+        <HeadGrid a={a} focus={focus} layer={layer} head={head} splitLayer={splitLayer} onPick={onPick} />
+        <p className="note">
+          Rows are layers (the first one at the top), columns are heads. Brighter squares look hard at a single earlier
+          word from here.
+          {splitLayer !== null && <> The gap marks where Prizma reads concepts and steers (just before layer {splitLayer}).</>} A
+          head with nothing useful to find usually rests on the start marker, so heavy lines to the start are normal.
         </p>
       </div>
     </div>
@@ -87,7 +87,7 @@ function HeadGrid({
   onPick: (layer: number, head: number) => void
 }) {
   return (
-    <div className="head-grid" role="grid" aria-label="Attention heads" style={{ gridTemplateColumns: `repeat(${a.nHead}, 20px)` }}>
+    <div className="head-grid" role="grid" aria-label="Attention heads" style={{ gridTemplateColumns: `repeat(${a.nHead}, 1fr)` }}>
       {Array.from({ length: a.nLayer * a.nHead }, (_, i) => {
         const l = Math.floor(i / a.nHead)
         const h = i % a.nHead

@@ -7,52 +7,71 @@ const TOOLTIP_WIDTH = 270
 const BOS_HINT = 'Start-of-text marker. The model was trained with it in front of every document, so Prizma adds it too.'
 
 /**
- * A text as the model sees it: one span per token. Hovering a token shows the candidates the
- * model considered for that position; clicking selects it for the views below. `tint` colours
- * the tokens (attention weights or a concept's activation) and `arcs` draws attention lines.
+ * A text as the model sees it: one span per token. Pointing at a token previews it (`onHover`),
+ * clicking selects it. `tint` colours the tokens (attention weights or a concept's activation)
+ * and `arcs` draws attention lines from the token in `focus`. With `tooltip`, pointing at a token
+ * shows the candidates the model considered there in a small popup instead.
  */
 export function TokenStream({
   run,
   placeholder,
   selected,
+  focus,
   onSelect,
+  onHover,
+  tooltip,
   tint,
   arcs,
   stale,
 }: {
   run: Run | null
   placeholder: string
+  /** The token the visitor clicked. */
   selected: number | null
+  /** The token the view next to the text is about: the one pointed at, else the selected one. */
+  focus: number | null
   onSelect: (pos: number) => void
+  /** Called with the token under the pointer (or keyboard focus), and with null when it leaves the text. */
+  onHover?: (pos: number | null) => void
+  tooltip?: boolean
   /** One value in [0, 1] per position. */
   tint: Float32Array | null
-  /** Attention from the selected token to positions 0..selected. */
+  /** Attention from the token in `focus` to positions 0..focus. */
   arcs: Float32Array | null
   /** The text is about to be replaced by a new run. */
   stale?: boolean
 }) {
   const ref = useRef<HTMLDivElement>(null)
-  const [hover, setHover] = useState<{ pos: number; shift: number } | null>(null)
+  const [tip, setTip] = useState<{ pos: number; shift: number } | null>(null)
 
   if (!run || run.tokens.length === 0) {
     return <div className="token-stream empty">{placeholder}</div>
   }
 
-  // The tooltip hangs below the token; near the right edge it slides left to stay inside the panel.
   const enter = (pos: number, el: HTMLElement) => {
+    onHover?.(pos)
+    if (!tooltip) return
+    // The tooltip hangs below the token; near the right edge it slides left to stay inside the text.
     const box = ref.current?.getBoundingClientRect()
     const left = (el.getClientRects()[0] ?? el.getBoundingClientRect()).left
     const overflow = box ? left + TOOLTIP_WIDTH - box.right : 0
-    setHover({ pos, shift: box ? -Math.max(0, Math.min(overflow, left - box.left)) : 0 })
+    setTip({ pos, shift: box ? -Math.max(0, Math.min(overflow, left - box.left)) : 0 })
+  }
+  const leaveText = () => {
+    setTip(null)
+    onHover?.(null)
   }
 
   return (
-    <div ref={ref} className={`token-stream${stale ? ' stale' : ''}`}>
+    // The preview holds while the pointer crosses the gaps between words and lines, and ends
+    // when it leaves the text as a whole.
+    <div ref={ref} className={`token-stream${stale ? ' stale' : ''}`} onMouseLeave={leaveText}>
       {run.tokens.map((token, pos) => {
         const candidates = run.candidates[pos]
         const level = tint && pos < tint.length ? tint[pos] : 0
         const classes = ['token', token.kind]
         if (pos === selected) classes.push('selected')
+        if (pos === focus) classes.push('focus')
         if (level > 0) classes.push('tinted')
         return (
           <span
@@ -65,7 +84,7 @@ export function TokenStream({
             aria-pressed={pos === selected}
             title={token.kind === 'bos' ? BOS_HINT : undefined}
             onClick={() => {
-              setHover(null) // the views below now show this token in full
+              setTip(null)
               onSelect(pos)
             }}
             onKeyDown={(e) => {
@@ -75,13 +94,13 @@ export function TokenStream({
               }
             }}
             onMouseEnter={(e) => enter(pos, e.currentTarget)}
-            onMouseLeave={() => setHover(null)}
+            onMouseLeave={() => setTip(null)}
             onFocus={(e) => enter(pos, e.currentTarget)}
-            onBlur={() => setHover(null)}
+            onBlur={leaveText}
           >
             {token.kind === 'bos' ? <span className="word">start</span> : <TokenBody text={token.text} />}
-            {hover?.pos === pos && candidates && (
-              <span className="tooltip" role="tooltip" style={{ left: hover.shift, width: TOOLTIP_WIDTH }}>
+            {tip?.pos === pos && candidates && (
+              <span className="tooltip" role="tooltip" style={{ left: tip.shift, width: TOOLTIP_WIDTH }}>
                 <span className="tooltip-title">The model's top {candidates.length} for this position</span>
                 <CandidateList candidates={candidates} chosenId={token.tokenId} />
               </span>
@@ -90,26 +109,36 @@ export function TokenStream({
         )
       })}
       {run.status === 'running' && <span className="caret" aria-label="generating" />}
-      {arcs && selected !== null && (
-        <AttentionArcs container={ref} from={selected} weights={arcs} layoutKey={run.tokens.length} />
-      )}
+      {arcs && focus !== null && <AttentionArcs container={ref} from={focus} weights={arcs} layoutKey={run.tokens.length} />}
     </div>
   )
 }
 
 /**
  * Most GPT-2 tokens start with a space. The space stays outside the highlighted part, so a
- * selection box hugs the word and does not split in two when the line wraps after the space.
+ * highlight hugs the word and does not split in two when the line wraps after the space.
+ * Line breaks are shown as marks: one per break, followed by a single new line, so a blank line
+ * the model wrote is visible without spreading a short text over the page.
  */
 function TokenBody({ text }: { text: string }) {
-  const visible = text.replace(/\n/g, '⏎\n')
-  const lead = /^ +/.exec(visible)?.[0] ?? ''
-  const word = visible.slice(lead.length)
-  if (word === '') return <span className="word">{visible}</span> // a token that is only spaces
+  const lead = /^ +/.exec(text)?.[0] ?? ''
+  const rest = text.slice(lead.length)
+  if (rest === '') return <span className="word">{text}</span> // a token that is only spaces
   return (
     <>
       {lead}
-      <span className="word">{word}</span>
+      <span className="word">
+        {rest.split(/(\n+)/).map((part, i) =>
+          part.startsWith('\n') ? (
+            <span key={i} className="nl">
+              {'⏎'.repeat(part.length)}
+              {'\n'}
+            </span>
+          ) : (
+            part
+          ),
+        )}
+      </span>
     </>
   )
 }

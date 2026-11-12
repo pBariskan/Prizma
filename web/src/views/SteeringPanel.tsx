@@ -1,4 +1,6 @@
 import type { SteeringVector } from '../engine/protocol'
+import { signed } from './format'
+import { Range } from './Range'
 
 /** Steering view controls: which direction to push along, and how hard. */
 export function SteeringPanel({
@@ -28,53 +30,51 @@ export function SteeringPanel({
   url: string | null
 }) {
   const isCurated = vectors.some((v) => v.id === vectorId)
+  const options = [...(!isCurated && vectorId ? [{ id: vectorId, label: customLabel ?? vectorId }] : []), ...vectors]
   return (
-    <section className="panel steering">
-      <div className="row">
-        <label className="field">
-          <span>Steer towards</span>
-          <select value={vectorId} onChange={(e) => onVector(e.target.value)} disabled={disabled}>
-            {!isCurated && vectorId && <option value={vectorId}>{customLabel ?? vectorId}</option>}
-            {vectors.map((v) => (
-              <option key={v.id} value={v.id}>
-                {v.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field grow">
-          <span>
-            Strength <output>{strength === 0 ? 'off' : `${strength > 0 ? '+' : ''}${strength.toFixed(2)}×`}</output>
-          </span>
-          <input
-            type="range"
-            min={range[0]}
-            max={range[1]}
-            step={0.05}
-            value={strength}
-            onChange={(e) => onStrength(Number(e.target.value))}
-            disabled={disabled || !vectorId}
-            list="strength-ticks"
-          />
-          <datalist id="strength-ticks">
-            <option value={0} />
-          </datalist>
-        </label>
-        <button type="button" className="ghost" onClick={() => onStrength(0)} disabled={disabled || strength === 0}>
-          Reset
-        </button>
+    <section className="steer-controls">
+      <div className="steer-pick">
+        <span className="eyebrow" id="steer-pick-label">
+          Push the model towards
+        </span>
+        <div className="chips" role="radiogroup" aria-labelledby="steer-pick-label">
+          {options.map((v) => (
+            <button key={v.id} type="button" role="radio" aria-checked={v.id === vectorId} className="chip" disabled={disabled} onClick={() => onVector(v.id)}>
+              {v.label}
+            </button>
+          ))}
+          {options.length === 0 && <span className="muted">{disabled ? 'The concepts arrive with the model.' : 'This model has no steering directions.'}</span>}
+        </div>
       </div>
-      <p className="hint">
-        {disabled
-          ? 'The slider unlocks when the model has loaded.'
-          : 'Drag the slider: the direction is added to the residual stream in the middle of the model and the text on the right is rewritten. Negative values push away from the concept. 1× is the size of a typical residual vector at that layer.'}
-        {detail && !disabled && <> Direction: {detail}.</>}
-        {url && !disabled && (
+      <div className="steer-dial">
+        <span className="eyebrow">How hard</span>
+        <div className="dial-row">
+          <span className="dial-end">away from it</span>
+          <Range min={range[0]} max={range[1]} step={0.05} value={strength} origin={0} tick onChange={onStrength} disabled={disabled || !vectorId} label="Steering strength" />
+          <span className="dial-end">towards it</span>
+          <output className="dial-value">{strength === 0 ? 'off' : signed(strength)}</output>
+          <button type="button" className="quiet" onClick={() => onStrength(0)} disabled={disabled || strength === 0}>
+            Turn off
+          </button>
+        </div>
+      </div>
+      <p className="note">
+        {disabled ? (
+          'The slider unlocks when the model has loaded.'
+        ) : (
           <>
-            {' '}
-            <a href={url} target="_blank" rel="noreferrer">
-              Examples ↗
-            </a>
+            Halfway through the model, Prizma adds this concept to what the model is thinking at every word, and the
+            text on the right is written again. 1× is as strong as everything else in the model's head at that point
+            taken together, so small pushes are enough.
+            {detail && <> Direction: {detail}.</>}
+            {url && (
+              <>
+                {' '}
+                <a href={url} target="_blank" rel="noreferrer">
+                  Examples ↗
+                </a>
+              </>
+            )}
           </>
         )}
       </p>

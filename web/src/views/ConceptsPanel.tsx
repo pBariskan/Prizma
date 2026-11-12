@@ -11,7 +11,7 @@ export type SaeStatus =
 
 const CONCEPTS_SHOWN = 10
 
-/** Concepts view: the strongest SAE features on the selected token. */
+/** Concepts view: the strongest SAE features on the token in focus. */
 export function ConceptsPanel({
   run,
   pos,
@@ -38,12 +38,15 @@ export function ConceptsPanel({
     if (status.kind === 'none') return <p className="hint">This model has no concept dictionary (sparse autoencoder).</p>
     if (status.kind === 'error') return <p className="error">Could not load the concept dictionary: {status.message}</p>
     if (status.kind === 'loading') {
+      const percent = status.total > 0 ? Math.round((status.loaded / status.total) * 100) : 0
       return (
-        <div>
-          <p className="hint">
-            Downloading the concept dictionary ({(status.loaded / 1e6).toFixed(0)} of {(status.total / 1e6).toFixed(0)} MB)…
+        <div className="loading-strip" role="status">
+          <div className="loading-bar" role="progressbar" aria-label="Concept dictionary download" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}>
+            <span style={{ width: `${percent}%` }} />
+          </div>
+          <p>
+            Downloading the concept dictionary · {(status.loaded / 1e6).toFixed(0)} of {(status.total / 1e6).toFixed(0)} MB
           </p>
-          <progress value={status.loaded} max={status.total || 1} />
         </div>
       )
     }
@@ -54,47 +57,55 @@ export function ConceptsPanel({
   }
 
   const concepts = conceptsAt(run.concepts, pos, CONCEPTS_SHOWN)
-  if (concepts.length === 0) return <p className="hint">No concept fires on this token.</p>
+  if (concepts.length === 0) return <p className="hint">No concept is active on this word.</p>
   const max = concepts[0].act
 
   return (
-    <div className="concepts">
-      <p>
-        The {concepts.length} strongest concepts inside the model at this token
-        {sae && <> (layer {sae.hook.match(/\d+/)?.[0]} residual stream, {sae.d_sae.toLocaleString('en-US')} concepts in the dictionary)</>}
-        . Click one to see where else it fires in the text.
+    <div className="lens-body concepts">
+      <p className="lead">
+        Halfway through the model, these are the concepts most active on this word. Click one to see where else it is
+        active, or to steer the text with it.
       </p>
       <ol className="concept-list">
         {concepts.map(({ feature, act }) => {
           const label = labelOf(feature)
+          const isPinned = feature === pinned
           return (
-            <li key={feature} className={feature === pinned ? 'pinned' : undefined}>
-              <button type="button" className="concept-main" aria-pressed={feature === pinned} onClick={() => onPin(feature === pinned ? null : feature)}>
-                <span className="concept-label">{label ?? <em>Unlabelled concept</em>}</span>
-                <span className="concept-id">#{feature}</span>
+            <li key={feature} className={isPinned ? 'concept pinned' : 'concept'}>
+              <button type="button" className="concept-main" aria-pressed={isPinned} onClick={() => onPin(isPinned ? null : feature)}>
+                <span className="concept-label">{label ?? <em>Unnamed concept</em>}</span>
+                <span className="pct">{activation(act)}</span>
                 <span className="bar-track">
                   <span className="bar" style={{ width: `${Math.max(2, (act / max) * 100)}%` }} />
                 </span>
-                <span className="pct">{activation(act)}</span>
               </button>
-              <button type="button" className="ghost" disabled={!canSteer} onClick={() => onSteer(feature)} title="Push the model towards this concept and regenerate">
-                Steer
-              </button>
-              {sae?.neuronpedia && (
-                <a className="ghost" href={`https://www.neuronpedia.org/${sae.neuronpedia}/${feature}`} target="_blank" rel="noreferrer" title="Texts where this concept fires most, on Neuronpedia">
-                  Examples ↗
-                </a>
+              {isPinned && (
+                <div className="concept-actions">
+                  <button type="button" className="action" disabled={!canSteer} onClick={() => onSteer(feature)} title="Push the model towards this concept and write the text again">
+                    Steer with it →
+                  </button>
+                  {sae?.neuronpedia && (
+                    <a className="action" href={`https://www.neuronpedia.org/${sae.neuronpedia}/${feature}`} target="_blank" rel="noreferrer" title="Texts where this concept is most active, on Neuronpedia">
+                      Examples ↗
+                    </a>
+                  )}
+                  <span className="concept-id">#{feature}</span>
+                </div>
               )}
             </li>
           )
         })}
       </ol>
-      {run.steer && (
-        <p className="hint">
-          This text was steered, so the concepts are read from the residual stream after the push: the steered
-          concept shows up on every token.
-        </p>
-      )}
+      <p className="note">
+        {sae && (
+          <>
+            The model has no list of concepts of its own: a sparse autoencoder found {sae.d_sae.toLocaleString('en-US')}{' '}
+            of them in its layer {sae.hook.match(/\d+/)?.[0]} activity, and the names are automatic guesses that can be
+            off.{' '}
+          </>
+        )}
+        {run.steer && <>This text was steered, so the concept that was pushed shows up on every word.</>}
+      </p>
     </div>
   )
 }
