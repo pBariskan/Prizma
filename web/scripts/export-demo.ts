@@ -2,7 +2,7 @@
  * Precomputes the example the site shows while the model downloads.
  *
  *   npm run export-demo                                   # artifacts/models/gpt2-l6, default example
- *   npm run export-demo -- --model gpt2-l6 --prompt "I think that you are" --vector sae-12102 --strength 0.5 --new 20
+ *   npm run export-demo -- --model gpt2-l6 --prompt "I have some big news:" --vector sae-12102 --strength 0.5 --new 20
  *
  * Runs the same engine as the browser (in Node, on the WASM backend) on the model's artifacts and
  * writes `artifacts/models/<model>/demo.json`: the original and the steered text with everything
@@ -20,7 +20,9 @@ const { values: args } = parseArgs({
   options: {
     model: { type: 'string', default: 'gpt2-l6' },
     'model-dir': { type: 'string' },
-    prompt: { type: 'string', default: 'I think that you are' },
+    // With real GPT-2 the plain continuation of this prompt is about a book and the Weddings
+    // feature turns it into a bride's announcement; many short prompts just loop when greedy.
+    prompt: { type: 'string', default: 'I have some big news:' },
     new: { type: 'string', default: '20' },
     vector: { type: 'string' },
     strength: { type: 'string' },

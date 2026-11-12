@@ -46,11 +46,17 @@ residual after the push, so the steered concept shows up at the top of every tok
 honest picture of what the upper half of the model saw, and it makes the mechanism visible.
 
 **SAE features steer in [-1, 1], starting at 0.5.** Strength stays in units of the typical
-residual norm (83.6 at layer 6). With the open SAE and "I think that you are": feature 12102
-(weddings) at 0.25x barely changes the text, at 0.5x gives "going to be the bride of my daughter",
-at 1.0x collapses into "reception reception reception". Feature 9191 (Paris) behaves the same way.
-ActAdd vectors keep the [-2, 2] range from `steering.json`; a vector can override both with
-`range` and `default_strength`.
+residual norm (83.1 at layer 6, measured with BOS). With the open SAE and "I think that you are":
+feature 12102 (weddings) at 0.25x barely changes the text, at 0.5x gives "going to be the bride
+of a big day", at 1.0x collapses into "reception reception reception". Feature 9191 (Paris)
+behaves the same way. The curated directions in `steering.json` carry their own `range` and
+`default_strength`; the [-1, 1] and 0.5 in the site are the fallback for a feature picked in the
+Concepts view, and `suggested_range` is the fallback for anything else.
+
+**The example prompt is "I have some big news:" with the Weddings feature at 0.5x.** Greedy GPT-2
+loops on many short prompts ("I think that you are right. I think that you are right."), which
+makes a poor first impression. This one continues with a book announcement and the steered text
+with "I'm going to be the bride of my first ever wedding", so the effect is obvious at a glance.
 
 **One extra forward pass per run feeds the views.** During generation only the residual and the
 top-10 of the last position are read back. When the text is finished, one more pass over the whole

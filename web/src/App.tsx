@@ -69,7 +69,7 @@ export default function App() {
   const [demoLabels, setDemoLabels] = useState<Record<string, string>>({})
   const [showingDemo, setShowingDemo] = useState(false)
 
-  const [prompt, setPrompt] = useState(shared.prompt ?? 'I think that you are')
+  const [prompt, setPrompt] = useState(shared.prompt ?? 'I have some big news:')
   const [maxNew, setMaxNew] = useState(shared.maxNew ?? 20)
   const [vectorId, setVectorId] = useState(shared.vector ?? '')
   const [strength, setStrength] = useState(shared.strength ?? 1)
