@@ -3,7 +3,7 @@
  * (`model.worker.ts`); `scripts/` runs the same code in Node to precompute the demo and to test it.
  *
  * Pipeline for every generated token (no KV cache in the MVP, the whole sequence is re-run):
- *   token ids --fp16 table lookup (JS)--> token embeddings
+ *   [BOS +] token ids --fp16 table lookup (JS)--> token embeddings
  *             --part A--> residual stream at blocks.{L}.hook_resid_pre
  *             --steering (optional)--> edited residual
  *             --part B--> next-token logits + top-k alternatives
@@ -102,14 +102,16 @@ export class Engine {
     const { files, bytes } = this.manifest
     const version = hashText(manifestText)
     const total = bytes[files.embeddings] + bytes[files.part_a] + bytes[files.part_b]
+    const downloaded = new Map<string, Uint8Array>()
     let before = 0
     const download = async (file: string, label: string) => {
       const buf = await this.io.fetchBytes(
         `${root}/${file}`,
         (loaded) => this.emit({ type: 'progress', loaded: before + loaded, total, label }),
-        version,
+        this.manifest.sha256?.[file] ?? version, // exports without per-file hashes: any manifest change refetches
       )
       before += buf.length
+      downloaded.set(file, buf)
       return buf
     }
     const embBytes = await download(files.embeddings, 'Downloading token embeddings')
@@ -122,17 +124,29 @@ export class Engine {
     ort.env.wasm.numThreads = 1
     let backend = forced ?? (await this.io.detectBackend())
     this.emit({ type: 'progress', loaded: total, total, label: `Starting the model on ${backend.toUpperCase()}` })
-    const create = (model: Uint8Array) =>
-      ort.InferenceSession.create(model, { executionProviders: [backend], graphOptimizationLevel: 'all' })
+    // Part B has no unembedding matrix of its own: GPT-2 ties it to the token embeddings, so the
+    // graph points at the embedding table and ONNX Runtime gets the bytes that are already here.
+    const external = (part: 'part_a' | 'part_b') =>
+      (this.manifest.external_data?.[part] ?? []).map((path) => {
+        const data = downloaded.get(path)
+        if (!data) throw new Error(`${part} needs ${path}, which is not one of the downloaded files`)
+        return { path, data }
+      })
+    const create = (model: Uint8Array, part: 'part_a' | 'part_b') =>
+      ort.InferenceSession.create(model, {
+        executionProviders: [backend],
+        graphOptimizationLevel: 'all',
+        externalData: external(part),
+      })
     try {
-      this.partA = await create(bytesA)
-      this.partB = await create(bytesB)
+      this.partA = await create(bytesA, 'part_a')
+      this.partB = await create(bytesB, 'part_b')
     } catch (err) {
       if (backend === 'wasm') throw err
       console.warn('WebGPU session failed, falling back to WASM', err)
       backend = 'wasm'
-      this.partA = await create(bytesA)
-      this.partB = await create(bytesB)
+      this.partA = await create(bytesA, 'part_a')
+      this.partB = await create(bytesB, 'part_b')
     }
     this.emit({
       type: 'ready',

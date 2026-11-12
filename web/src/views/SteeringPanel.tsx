@@ -11,6 +11,7 @@ export function SteeringPanel({
   onStrength,
   disabled,
   detail,
+  url,
 }: {
   /** Curated directions from steering.json. */
   vectors: SteeringVector[]
@@ -23,6 +24,8 @@ export function SteeringPanel({
   onStrength: (value: number) => void
   disabled: boolean
   detail: string | null
+  /** A page with examples of the direction, when steering.json has one. */
+  url: string | null
 }) {
   const isCurated = vectors.some((v) => v.id === vectorId)
   return (
@@ -66,6 +69,14 @@ export function SteeringPanel({
           ? 'The slider unlocks when the model has loaded.'
           : 'Drag the slider: the direction is added to the residual stream in the middle of the model and the text on the right is rewritten. Negative values push away from the concept. 1× is the size of a typical residual vector at that layer.'}
         {detail && !disabled && <> Direction: {detail}.</>}
+        {url && !disabled && (
+          <>
+            {' '}
+            <a href={url} target="_blank" rel="noreferrer">
+              Examples ↗
+            </a>
+          </>
+        )}
       </p>
     </section>
   )

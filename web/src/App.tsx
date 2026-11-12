@@ -96,12 +96,14 @@ export default function App() {
   const ready = status.kind === 'ready'
 
   // The first direction of steering.json is preselected, unless a link or the example chose one already.
+  // A strength from a link wins; without one the slider starts where the direction is known to work.
   const adoptSteering = useEffectEvent((file: SteeringFile) => {
     setSteering(file)
-    const first = file.vectors[0]
-    if (vectorId || !first) return
-    setVectorId(first.id)
-    if (shared.strength === undefined) setStrength(startStrength(first.id, file, strength))
+    const id = vectorId || file.vectors[0]?.id
+    if (!id) return
+    if (!vectorId) setVectorId(id)
+    const chosenByLink = vectorId === shared.vector && !showingDemo
+    if (shared.strength === undefined && (!vectorId || chosenByLink)) setStrength(startStrength(id, file, strength))
   })
 
   // --- Worker messages -----------------------------------------------------------------------
@@ -346,6 +348,7 @@ export default function App() {
         onStrength={setStrength}
         disabled={!ready}
         detail={vector?.detail ?? null}
+        url={vector?.url ?? null}
       />
 
       <section className="compare">

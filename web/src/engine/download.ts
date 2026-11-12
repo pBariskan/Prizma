@@ -20,6 +20,7 @@ export function hashText(text: string): string {
 export async function fetchWithCache(
   url: string,
   onProgress: (loaded: number, total: number) => void,
+  /** Changes when the content behind the URL changes; an older cached copy is then replaced. */
   version = '',
 ): Promise<Uint8Array> {
   const cache = 'caches' in self ? await caches.open(CACHE_NAME).catch(() => null) : null
@@ -30,6 +31,10 @@ export async function fetchWithCache(
     const buf = new Uint8Array(await cached.arrayBuffer())
     onProgress(buf.length, buf.length)
     return buf
+  }
+  // Older versions of this file would otherwise stay in the cache forever (~180 MB each).
+  for (const old of (await cache?.keys()) ?? []) {
+    if (old.url.split('?')[0] === new URL(url, self.location.href).href.split('?')[0]) await cache?.delete(old)
   }
 
   const res = await fetch(url)

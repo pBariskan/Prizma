@@ -24,7 +24,11 @@ export interface Manifest {
   prepend_bos?: boolean
   bos_token_id?: number
   files: { embeddings: string; part_a: string; part_b: string }
+  /** Files a part reads as ONNX external data (part B takes its unembedding from the embedding table). */
+  external_data?: { part_a?: string[]; part_b?: string[] }
   bytes: Record<string, number>
+  /** SHA-256 of each file; used to notice that a cached copy is from an older export. */
+  sha256?: Record<string, string>
 }
 
 export interface SteeringVector {
@@ -37,6 +41,8 @@ export interface SteeringVector {
   range?: [number, number]
   /** Slider position to start from when this direction is picked. */
   default_strength?: number
+  /** A page with examples of this direction (Neuronpedia, for SAE features). */
+  url?: string
 }
 
 /** `models/<name>/steering.json`, written by `research/export_steering.py`. */
