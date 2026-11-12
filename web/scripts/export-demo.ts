@@ -2,7 +2,7 @@
  * Precomputes the example the site shows while the model downloads.
  *
  *   npm run export-demo                                   # artifacts/models/gpt2-l6, default example
- *   npm run export-demo -- --model gpt2-l6 --prompt "I think that you are" --vector love-hate --strength 1.5 --new 20
+ *   npm run export-demo -- --model gpt2-l6 --prompt "I think that you are" --vector sae-12102 --strength 0.5 --new 20
  *
  * Runs the same engine as the browser (in Node, on the WASM backend) on the model's artifacts and
  * writes `artifacts/models/<model>/demo.json`: the original and the steered text with everything
@@ -23,13 +23,12 @@ const { values: args } = parseArgs({
     prompt: { type: 'string', default: 'I think that you are' },
     new: { type: 'string', default: '20' },
     vector: { type: 'string' },
-    strength: { type: 'string', default: '1' },
+    strength: { type: 'string' },
   },
 })
 
 const modelDir = args['model-dir'] ?? resolve(import.meta.dirname, '../../artifacts/models', args.model)
 const maxNewTokens = Number(args.new)
-const strength = Number(args.strength)
 
 let state: RunsState = NO_RUNS
 let steering: SteeringFile | null = null
@@ -50,6 +49,11 @@ if (!steering) throw new Error('the model did not load')
 const vectors = (steering as SteeringFile).vectors
 const vectorId = args.vector ?? vectors[0]?.id
 if (!vectorId) throw new Error('no steering vector: pass --vector')
+// Without --strength: where steering.json says this direction works, else a gentle start for SAE features.
+const strength =
+  args.strength !== undefined
+    ? Number(args.strength)
+    : (vectors.find((v) => v.id === vectorId)?.default_strength ?? (saeFeatureOf(vectorId) !== null ? 0.5 : 1))
 
 const steer = { vectorId, strength }
 apply({ type: 'queue', key: 'original', requestId: 1, steer: null })

@@ -64,7 +64,7 @@ Node. That gives an end-to-end test on the tiny random model (skipped where `art
 exist, such as CI) and `npm run export-demo`, which precomputes `demo.json` with exactly the code
 the browser runs.
 
-**A precomputed example is the page's initial state.** While the 220 MB download runs, the site
+**A precomputed example is the page's initial state.** While the model download runs (about 180 MB), the site
 shows `demo.json` (original and steered text with candidates, attention and concepts, about
 300 KB) under the progress bar, and every view works on it. Because it is what the visitor's
 browser would compute, nothing changes when the model becomes ready. A share link with its own

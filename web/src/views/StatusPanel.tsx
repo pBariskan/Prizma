@@ -42,7 +42,8 @@ export function StatusPanel({
         </div>
         <progress value={status.loaded} max={status.total || 1} />
         <p className="hint">
-          The model runs on your device, so it is downloaded once (about 220 MB) and then kept by your browser.
+          The model runs on your device, so it is downloaded once{status.total > 0 && ` (about ${mb(status.total)})`} and
+          then kept by your browser.
           {showingDemo && (
             <>
               {' '}
