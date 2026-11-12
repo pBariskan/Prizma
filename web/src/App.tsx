@@ -37,7 +37,11 @@ export default function App() {
       if (msg.type === 'progress') setStatus({ kind: 'loading', ...msg })
       if (msg.type === 'ready') {
         setStatus({ kind: 'ready', ...msg })
-        setVectorId((v) => v || msg.steering.vectors[0]?.id || '')
+        const vectors = msg.steering.vectors
+        const first = vectors.find((v) => v.id === params.get('vector')) ?? vectors[0]
+        setVectorId(first?.id ?? '')
+        // A strength from a share link wins; otherwise start where this vector is known to work.
+        if (!params.has('strength') && first?.default_strength !== undefined) setStrength(first.default_strength)
       }
       if (msg.type === 'error' && msg.requestId === undefined) setStatus({ kind: 'error', message: msg.message })
     })
@@ -53,7 +57,13 @@ export default function App() {
     setRanPrompt(prompt)
     // Keep the settings in the URL so a link reproduces this exact run.
     const url = new URL(location.href)
-    url.search = new URLSearchParams({ model: MODEL, prompt, vector: vectorId, strength: String(strength) }).toString()
+    url.search = new URLSearchParams({
+      model: MODEL,
+      prompt,
+      vector: vectorId,
+      strength: String(strength),
+      ...(FORCED_BACKEND && { backend: FORCED_BACKEND }),
+    }).toString()
     history.replaceState(null, '', url)
     try {
       const times: number[] = []
@@ -72,7 +82,14 @@ export default function App() {
 
   const ready = status.kind === 'ready'
   const vector = ready ? status.steering.vectors.find((v) => v.id === vectorId) : undefined
-  const [lo, hi] = ready ? status.steering.suggested_range : [-2, 2]
+  // SAE features work in a much narrower range than ActAdd vectors, so each vector carries its own.
+  const [lo, hi] = vector?.range ?? (ready ? status.steering.suggested_range : [-2, 2])
+
+  function pickVector(id: string) {
+    setVectorId(id)
+    const next = ready ? status.steering.vectors.find((v) => v.id === id) : undefined
+    if (next?.default_strength !== undefined) setStrength(next.default_strength)
+  }
 
   return (
     <main>
@@ -121,7 +138,7 @@ export default function App() {
         <div className="row">
           <label className="field">
             <span>Steering direction</span>
-            <select value={vectorId} onChange={(e) => setVectorId(e.target.value)} disabled={!ready}>
+            <select value={vectorId} onChange={(e) => pickVector(e.target.value)} disabled={!ready}>
               {ready &&
                 status.steering.vectors.map((v) => (
                   <option key={v.id} value={v.id}>

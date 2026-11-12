@@ -10,10 +10,17 @@ export interface Manifest {
   d_model: number
   vocab_size: number
   n_positions: number
+  /** True for real GPT-2: the worker puts `bos_token_id` (<|endoftext|>) in front of every prompt. */
+  prepend_bos?: boolean
+  bos_token_id?: number
   top_k: number
   quantization: string
   files: { embeddings: string; part_a: string; part_b: string }
+  /** Files a part reads as ONNX external data (part B takes its unembedding from the embedding table). */
+  external_data?: { part_a?: string[]; part_b?: string[] }
   bytes: Record<string, number>
+  /** SHA-256 of each file; used to notice that a cached copy is from an older export. */
+  sha256?: Record<string, string>
 }
 
 export interface SteeringVector {
@@ -22,6 +29,10 @@ export interface SteeringVector {
   source: 'actadd' | 'sae'
   detail: string
   vector: number[]
+  /** Strength range that works for this vector; falls back to the file's `suggested_range`. */
+  range?: [number, number]
+  /** A strength where the effect is clear and the text still reads as text. */
+  default_strength?: number
 }
 
 export interface SteeringFile {

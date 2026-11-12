@@ -5,13 +5,20 @@ const CACHE_NAME = 'prizma-models-v1'
 export async function fetchWithCache(
   url: string,
   onProgress: (loaded: number, total: number) => void,
+  /** Content hash from the manifest. A cached copy made from a different export is dropped. */
+  version = '',
 ): Promise<Uint8Array> {
   const cache = 'caches' in self ? await caches.open(CACHE_NAME).catch(() => null) : null
-  const cached = await cache?.match(url)
+  const key = version ? `${url}${url.includes('?') ? '&' : '?'}v=${version.slice(0, 16)}` : url
+  const cached = await cache?.match(key)
   if (cached) {
     const buf = new Uint8Array(await cached.arrayBuffer())
     onProgress(buf.length, buf.length)
     return buf
+  }
+  // Older versions of this file would otherwise stay in the cache forever (~180 MB each).
+  for (const old of (await cache?.keys()) ?? []) {
+    if (old.url.split('?')[0] === new URL(url, self.location.href).href.split('?')[0]) await cache?.delete(old)
   }
 
   const res = await fetch(url)
@@ -33,6 +40,6 @@ export async function fetchWithCache(
     buf.set(c, offset)
     offset += c.length
   }
-  await cache?.put(url, new Response(buf, { headers: { 'Content-Type': 'application/octet-stream' } })).catch(() => {})
+  await cache?.put(key, new Response(buf, { headers: { 'Content-Type': 'application/octet-stream' } })).catch(() => {})
   return buf
 }

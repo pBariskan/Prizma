@@ -3,7 +3,7 @@
  * The model runs here so the UI never freezes.
  *
  * Pipeline for every generated token (no KV cache in the MVP, the whole sequence is re-run):
- *   token ids --fp16 table lookup (JS)--> token embeddings
+ *   [BOS +] token ids --fp16 table lookup (JS)--> token embeddings
  *             --part A--> residual stream at blocks.{L}.hook_resid_pre
  *             --steering (optional)--> edited residual
  *             --part B--> next-token logits + top-k alternatives
@@ -45,10 +45,13 @@ async function detectBackend(): Promise<Backend> {
   }
 }
 
-async function createSession(bytes: Uint8Array, backend: Backend) {
+type ExternalData = { path: string; data: Uint8Array }[]
+
+async function createSession(bytes: Uint8Array, backend: Backend, externalData: ExternalData) {
   return ort.InferenceSession.create(bytes, {
     executionProviders: [backend],
     graphOptimizationLevel: 'all',
+    externalData,
   })
 }
 
@@ -61,12 +64,16 @@ async function load(baseUrl: string, forced?: Backend) {
 
   const { files, bytes } = manifest
   const total = bytes[files.embeddings] + bytes[files.part_a] + bytes[files.part_b]
+  const downloaded = new Map<string, Uint8Array>()
   let before = 0
   const download = async (file: string, label: string) => {
-    const buf = await fetchWithCache(`${root}/${file}`, (loaded) =>
-      post({ type: 'progress', loaded: before + loaded, total, label }),
+    const buf = await fetchWithCache(
+      `${root}/${file}`,
+      (loaded) => post({ type: 'progress', loaded: before + loaded, total, label }),
+      manifest.sha256?.[file],
     )
     before += buf.length
+    downloaded.set(file, buf)
     return buf
   }
   const embBytes = await download(files.embeddings, 'Downloading token embeddings')
@@ -74,20 +81,29 @@ async function load(baseUrl: string, forced?: Backend) {
   const bytesA = await download(files.part_a, 'Downloading model (part A)')
   const bytesB = await download(files.part_b, 'Downloading model (part B)')
 
+  // Part B has no unembedding matrix of its own: GPT-2 ties it to the token embeddings, so the
+  // graph points at the embedding table and we hand ONNX Runtime the bytes we already have.
+  const external = (part: 'part_a' | 'part_b'): ExternalData =>
+    (manifest.external_data?.[part] ?? []).map((path) => {
+      const data = downloaded.get(path)
+      if (!data) throw new Error(`${part} needs ${path}, which is not one of the downloaded files`)
+      return { path, data }
+    })
+
   // Multi-threaded WASM deadlocks when ORT is bundled inside our own module worker (its pthreads
   // re-import this file). Single-threaded until that is solved; WebGPU is the main path anyway.
   ort.env.wasm.numThreads = 1
   let backend = forced ?? (await detectBackend())
   post({ type: 'progress', loaded: total, total, label: `Starting the model on ${backend.toUpperCase()}` })
   try {
-    partA = await createSession(bytesA, backend)
-    partB = await createSession(bytesB, backend)
+    partA = await createSession(bytesA, backend, external('part_a'))
+    partB = await createSession(bytesB, backend, external('part_b'))
   } catch (err) {
     if (backend === 'wasm') throw err
     console.warn('WebGPU session failed, falling back to WASM', err)
     backend = 'wasm'
-    partA = await createSession(bytesA, backend)
-    partB = await createSession(bytesB, backend)
+    partA = await createSession(bytesA, backend, external('part_a'))
+    partB = await createSession(bytesB, backend, external('part_b'))
   }
   post({ type: 'ready', backend, manifest, steering, loadMs: performance.now() - t0 })
 }
@@ -121,9 +137,13 @@ async function step(ids: number[], steer: SteerSpec | null) {
 }
 
 async function generate(requestId: number, prompt: string, maxNewTokens: number, steer: SteerSpec | null) {
-  const ids = encode(prompt).slice(-(MAX_SEQUENCE_TOKENS - 1))
-  if (ids.length === 0) throw new Error('Please type a prompt first.')
-  post({ type: 'prompt', requestId, tokens: ids.map((id) => ({ tokenId: id, text: decode([id]) })) })
+  // GPT-2 saw <|endoftext|> between documents, and the SAEs for this layer were trained on sequences
+  // that start with it. Without it the first real token becomes the attention sink.
+  const bos = manifest.prepend_bos ? [manifest.bos_token_id ?? 50256] : []
+  const promptIds = encode(prompt).slice(-(MAX_SEQUENCE_TOKENS - 1 - bos.length))
+  if (promptIds.length === 0) throw new Error('Please type a prompt first.')
+  const ids = [...bos, ...promptIds]
+  post({ type: 'prompt', requestId, tokens: promptIds.map((id) => ({ tokenId: id, text: decode([id]) })) })
 
   const budget = Math.min(maxNewTokens, MAX_SEQUENCE_TOKENS - ids.length)
   for (let i = 0; i < budget; i++) {
