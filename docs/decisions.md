@@ -2,6 +2,54 @@
 
 Short records of choices that are not obvious from the code. Newest first.
 
+## 2026-11-12: One view at a time (page redesign)
+
+Poyri's feedback on the first Phase 2 page: it was a stack of boxes, it showed everything at once,
+and it had no character. The page was rebuilt around these choices.
+
+**One sheet, four views, one on screen at a time.** The page is a header, a short introduction and
+a single sheet that holds the prompt, four tabs and the open view. The tabs are numbered in the
+order a first visit should take and each asks one question: Next word ("What else could it have
+said?"), Attention ("Where was it looking?"), Concepts ("What did it have in mind?"), Steering
+("What if you push on it?"). Steering used to be a permanent panel above two permanent texts; it
+is now the fourth view (`view=steer` in share links), so a first-time visitor meets one idea at a
+time.
+
+**The views that look inside show one text with its details beside it.** Next word, Attention and
+Concepts show the original or the steered text (a switch appears once there is a steered one) and,
+next to it, what the view knows about one word. The details used to sit below both texts, a scroll
+away from the word they describe. Only the Steering view shows both texts side by side, because
+only there the comparison is the point; a click on a word there opens it in the view that was used
+last.
+
+**Pointing previews, clicking keeps.** While the pointer is over the text the details follow the
+word under it, and they return to the clicked word when the pointer leaves the text (not when it
+leaves a word, or the gaps between lines would flicker). The floating candidate list on hover
+remains only in the Steering view, where there is no detail column.
+
+**A concept's actions appear when it is picked.** The concept list had 20 buttons (Steer and
+Examples on each of 10 rows). A row is now a name, a value and a bar; clicking it highlights the
+concept across the text and shows "Steer with it" and "Examples" for that row only. Steering from
+there opens the Steering view.
+
+**The identity is a prism.** One text goes in, four views come out. Each view has one colour
+(orange, teal, violet, magenta, in tab order) and only the open view shows its colour on the text
+and in its charts (`--lens` in `index.css`); everything else is ink on paper. The model's words are
+set in a serif (Fraunces), the interface in Inter, tokens and numbers in JetBrains Mono.
+
+**Fonts are bundled, not loaded from a font service.** They come from `@fontsource-variable/*`
+(SIL Open Font License) and are served with the site, about 0.3 MB for Latin text. A request to a
+third-party font host on every visit would sit badly with "nothing leaves your browser", and the
+site stays one static bundle.
+
+**Three example starts are offered under the prompt.** Many short prompts loop under greedy
+decoding ("I love the cold, but I also love the cold"), which is a poor first impression. The
+three starts were picked from ten tried with the real model because the plain continuation and the
+Weddings and Space missions continuations all stay readable.
+
+**Enter runs the model.** The prompt is a single growing line, so Enter generates and Shift+Enter
+breaks the line (it used to be Ctrl/Cmd+Enter).
+
 ## 2026-11-12: Phase 2 views on the open SAE
 
 **The MVP is built on the open GPT-2 SAE first; ours replaces it as an artifact.** Joseph Bloom's

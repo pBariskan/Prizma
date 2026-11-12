@@ -81,7 +81,7 @@ npm run export-demo -- --vector sae-12102 --strength 0.5   # -> artifacts/models
 
 URL parameters. Share link: `prompt`, `new` (tokens to generate), `vector` (a `steering.json` id or
 `sae-<feature id>`), `strength`, `token` (`o7` / `s7`: token 7 of the original / steered text),
-`view=next|attention|concepts`, `head=<layer>.<head>`, `concept` (pinned feature id).
+`view=next|attention|concepts|steer`, `head=<layer>.<head>`, `concept` (pinned feature id).
 Development: `model`, `sae` (another SAE folder of the model), `backend=webgpu|wasm`.
 
 ## Hosting
@@ -110,6 +110,10 @@ cache busting.
   small modules (`steering.ts`, `embeddings.ts`, `sae.ts`) with Vitest tests.
 - The UI keeps what is on screen in the URL (`src/state/share.ts`); a new piece of view state
   that should survive a share link goes there.
+- The page is one sheet with four views, one on screen at a time. Each view has one colour
+  (`--next`, `--attention`, `--concepts`, `--steer` in `src/index.css`); inside the sheet `--lens` is
+  the colour of the open view, and nothing else on the page is coloured. Fonts are bundled
+  (`@fontsource-variable/*`), never loaded from another host.
 - When the artifact format changes, update `artifacts/README.md`, `protocol.ts` and this file together.
 
 ## Roadmap

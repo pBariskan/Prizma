@@ -68,13 +68,13 @@ every visit.
 ## Checking the live site
 
 - Open <https://pbariskan.github.io/Prizma/?model=gpt2-l6>. While the model downloads, an example
-  text is already on screen and can be explored. When it is ready the status row shows `gpt2`
-  and `WebGPU` (or `WASM (slower, ...)`).
-- Press *Generate* with the default settings. The steered panel should differ from the original
-  one; `docs/phase0-verification.md` lists what to expect for a few prompts.
-- Click a word and open the *Concepts* tab: ten labelled concepts should appear a moment after the
+  text is already on screen and can be explored. When it is ready the header says `Running on your
+  device` with `WebGPU` (or `slow mode` when the browser has no WebGPU and the model runs on WASM).
+- Press *Generate* with the default settings and open the *Steering* tab. The steered text should
+  differ from the original one; `docs/phase0-verification.md` lists what to expect for a few prompts.
+- Click a word and open the *Concepts* tab: ten named concepts should appear a moment after the
   model is ready. If the tab says the model has no concept dictionary, `<ARTIFACTS_URL>/gpt2-l6/sae/manifest.json`
   was not uploaded.
-- If the status row says the model could not be loaded, open
+- If the header says the model did not load (the reason is under the prompt), open
   `<ARTIFACTS_URL>/gpt2-l6/manifest.json` in a browser tab: a 404 there means the variable or the
   upload is wrong.
