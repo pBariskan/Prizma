@@ -48,16 +48,19 @@ cd research
 uv sync
 uv run python export_onnx.py
 uv run python export_steering.py
+uv run python export_sae.py          # concept dictionary: the open GPT-2 SAE (+76 MB)
+uv run python export_labels.py       # concept labels from Neuronpedia
 
 # 2. Run the site
 cd ../web
 npm install
+npm run export-demo -- --vector sae-12102 --strength 0.5   # example shown while the model loads
 npm run dev          # then open http://localhost:5173/?model=gpt2-l6
 ```
 
-No GPT-2 download? `uv run python export_onnx.py --random --tiny --split-layer 2` and
-`uv run python export_steering.py --random --model-dir ../artifacts/models/gpt2-random-tiny`
-produce a tiny random model for checking the pipeline (`/?model=gpt2-random-tiny`).
+No GPT-2 download? Add `--random --tiny --split-layer 2` to `export_onnx.py` and
+`--random --model-dir ../artifacts/models/gpt2-random-tiny` to `export_steering.py` and
+`export_sae.py` for a tiny random model that checks the pipeline (`/?model=gpt2-random-tiny`).
 
 Tests: `uv run --group dev pytest` in `research/`, `npm test` in `web/`.
 `uv run python check_steering.py` in `research/` prints original vs. steered text for every
@@ -77,7 +80,7 @@ with links, are in [docs/publishing.md](docs/publishing.md).
 | --- | --- | --- |
 | 0 Prototype | Split GPT-2 running in the browser; a steering vector changes the output | gate passed 2026-11-12 with real weights; publishing the model files and the site is the last step |
 | 1 Own SAE | TopK SAE (16k concepts) on layer 6, metrics vs. an open SAE, Claude Haiku concept labels | pipeline being written, GPU run not started |
-| 2 MVP + launch | Next word, Attention, Concepts and Steering views, share links, live site | views being built on the open SAE |
+| 2 MVP + launch | Next word, Attention, Concepts and Steering views, share links, live site | views built on the open GPT-2 SAE and checked with real weights; launch pending |
 | 3 Story | Concept explorer, guided tours, behind-the-scenes write-up, demo video | |
 
 The full plan is in [docs/plan.md](docs/plan.md); design choices are in [docs/decisions.md](docs/decisions.md).

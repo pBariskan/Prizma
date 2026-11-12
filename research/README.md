@@ -7,6 +7,8 @@ The offline pipeline that produces everything in `artifacts/`.
 | `export_onnx.py` | 0 | Splits GPT-2 at `blocks.{L}.hook_resid_pre` into two ONNX parts, quantizes them, verifies against Hugging Face |
 | `export_steering.py` | 0 | Steering directions: ActAdd contrast vectors and curated open-SAE decoder rows, with the strength range that works for each |
 | `check_steering.py` | 0 | Runs the exported ONNX parts like the browser does and prints original vs. steered text (strength sweeps, regression checks) |
+| `export_sae.py` | 2 | Converts a SAELens SAE (the open GPT-2 SAE, or ours with `--sae-path`) into the raw files the browser encodes with; verifies explained variance and the residual-centering convention |
+| `export_labels.py` | 2 | One label per feature of the open SAE, from Neuronpedia's public export |
 | `train_sae.py` | 1 | TopK SAE (16,384 concepts, k=32) on the layer-6 residual stream with SAELens |
 | `collect_top.py` | 1 | Top-20 activating snippets per concept over ~10M tokens |
 | `autointerp.py` | 1 | Claude Haiku labels and descriptions (Batch API), plus a scoring pass |

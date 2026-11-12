@@ -20,11 +20,13 @@ Decisions and their reasons: [docs/decisions.md](docs/decisions.md).
 research/ (Python, uv)                     artifacts/                      web/ (React + Vite + TS)
   export_onnx.py   GPT-2 -> part A, part B  models/<name>/                   src/engine/  Web Worker, ORT Web,
   export_steering.py steering directions      manifest.json                               SAE encode, steering
-  check_steering.py browser pipeline in Py
-  train_sae.py     (Phase 1)                  embeddings.f16.bin             src/views/   Next word, Attention,
-  collect_top.py   (Phase 1)                  part_a.onnx, part_b.onnx                    Concepts, Steering
-  autointerp.py    (Phase 1)                  steering.json                  src/tours/   guided tours (v2)
-  eval.py          (Phase 1)                concepts/ (Phase 1, sharded JSON)
+  export_sae.py    SAE -> web format          embeddings.f16.bin             src/state/   runs, share links, demo
+  export_labels.py Neuronpedia labels         part_a.onnx, part_b.onnx       src/views/   Next word, Attention,
+  check_steering.py browser pipeline in Py    steering.json, demo.json                    Concepts, Steering
+  train_sae.py     (Phase 1)                  sae/ manifest.json, encoder,   scripts/     engine in Node: demo
+  collect_top.py   (Phase 1)                       biases, decoder/, labels               export, end-to-end test
+  autointerp.py    (Phase 1)                concepts/ (Phase 1, sharded JSON) src/tours/  guided tours (v2)
+  eval.py          (Phase 1)
 ```
 
 The model is split at the residual stream entering block 6 (`blocks.6.hook_resid_pre`):
@@ -33,8 +35,11 @@ The model is split at the residual stream entering block 6 (`blocks.6.hook_resid
    up token embeddings in JS from `embeddings.f16.bin` (fp16 Gather is not supported on every
    WebGPU device, and an fp32 table would add ~150 MB).
 2. **Part A** (`tok_embeds [1,T,768]` -> `resid [1,T,768]`, `attn [1,6,12,T,T]`) runs blocks 0-5.
-3. In between, the browser edits the residual stream: SAE encode for the Concepts view, and
-   `resid += strength * typical_norm * direction` for steering.
+3. In between, the browser edits the residual stream: `resid += strength * typical_norm * direction`
+   for steering, then SAE encode (plain JS, `sae.ts`) for the Concepts view. How to encode is
+   written in `sae/manifest.json`, so swapping the SAE is an artifact change only. The open GPT-2
+   SAE needs two things that are easy to miss: the residual is mean-centered first (`center_resid`)
+   and every sequence starts with `<|endoftext|>` (`prepend_bos`, in the model or the SAE manifest).
 4. **Part B** (`resid` -> `last_logits [1,V]`, `topk_probs/topk_ids [1,T,10]`, `attn [1,6,12,T,T]`)
    runs blocks 6-11 and the unembedding. GPT-2 ties the unembedding to the token embeddings, so
    `part_b.onnx` does not contain it: the graph points at `embeddings.f16.bin` as ONNX external
@@ -42,8 +47,10 @@ The model is split at the residual stream entering block 6 (`blocks.6.hook_resid
 
 Runtime: ONNX Runtime Web with WebGPU, WASM fallback. The transformer blocks are 8-bit
 block-quantized (`MatMulNBits`, asymmetric); the unembedding is never quantized (it is the one
-matrix where 8 bits visibly change the predictions). ~180 MB total. MVP has no KV cache: sequences
-are capped at 64 tokens and the full sequence is re-run for every new token.
+matrix where 8 bits visibly change the predictions). ~180 MB total, plus 38 MB for the SAE encoder
+(downloaded after the model is usable). MVP has no KV cache: sequences are capped at 64 tokens
+(BOS included) and the full sequence is re-run for every new token. When a run finishes, one more
+pass returns the candidates at every position and all attention patterns.
 
 ## Commands
 
@@ -54,20 +61,28 @@ uv sync
 uv run --group dev pytest                         # split model must match Hugging Face GPT-2
 uv run python export_onnx.py                      # needs huggingface.co; -> artifacts/models/gpt2-l6
 uv run python export_steering.py                  # -> artifacts/models/gpt2-l6/steering.json
+uv run python export_sae.py                       # open SAE -> artifacts/models/gpt2-l6/sae
+uv run python export_sae.py --sae-path runs/<name>   # our own SAE (SAELens folder) instead
+uv run python export_labels.py                    # Neuronpedia labels -> .../sae/labels.json
 uv run python check_steering.py                   # original vs. steered text, same pipeline as the browser
 uv run python export_onnx.py --random --tiny --split-layer 2   # offline test model
 uv run python export_steering.py --random --model-dir ../artifacts/models/gpt2-random-tiny
+uv run python export_sae.py --random --model-dir ../artifacts/models/gpt2-random-tiny
 
 # Web (Node 20+)
 cd web
 npm install
 npm run dev        # serves ../artifacts at /artifacts; open /?model=gpt2-l6
-npm test           # unit tests for the engine math
+npm test           # unit tests; plus the engine end to end if artifacts/models/gpt2-random-tiny exists
 npm run lint
 npm run build
+npm run export-demo -- --vector sae-12102 --strength 0.5   # -> artifacts/models/gpt2-l6/demo.json
 ```
 
-URL parameters: `model`, `prompt`, `vector`, `strength`, `backend=webgpu|wasm`.
+URL parameters. Share link: `prompt`, `new` (tokens to generate), `vector` (a `steering.json` id or
+`sae-<feature id>`), `strength`, `token` (`o7` / `s7`: token 7 of the original / steered text),
+`view=next|attention|concepts|steer`, `head=<layer>.<head>`, `concept` (pinned feature id).
+Development: `model`, `sae` (another SAE folder of the model), `backend=webgpu|wasm`.
 
 ## Hosting
 
@@ -89,8 +104,16 @@ cache busting.
 - Steering strengths are in units of the typical residual norm. SAE features work at about
   0.25x-0.75x, ActAdd vectors up to about 1x; each vector in `steering.json` carries its own
   `range` and `default_strength`.
-- Web: anything that touches the model runs in `src/engine/model.worker.ts`. Pure math lives in
-  small modules (`steering.ts`, `embeddings.ts`) with Vitest tests.
+- Web: anything that touches the model runs in the worker. The pipeline itself is
+  `src/engine/engine.ts`, which has no browser dependencies: `model.worker.ts` hosts it in the
+  browser and `scripts/node-engine.ts` in Node (demo export, end-to-end test). Pure math lives in
+  small modules (`steering.ts`, `embeddings.ts`, `sae.ts`) with Vitest tests.
+- The UI keeps what is on screen in the URL (`src/state/share.ts`); a new piece of view state
+  that should survive a share link goes there.
+- The page is one sheet with four views, one on screen at a time. Each view has one colour
+  (`--next`, `--attention`, `--concepts`, `--steer` in `src/index.css`); inside the sheet `--lens` is
+  the colour of the open view, and nothing else on the page is coloured. Fonts are bundled
+  (`@fontsource-variable/*`), never loaded from another host.
 - When the artifact format changes, update `artifacts/README.md`, `protocol.ts` and this file together.
 
 ## Roadmap
