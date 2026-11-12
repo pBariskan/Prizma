@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "export-demo": "tsx scripts/export-demo.ts"
   },
   "dependencies": {
     "d3-scale": "^4.0.3",
