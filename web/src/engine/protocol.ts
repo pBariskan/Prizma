@@ -191,7 +191,13 @@ export type WorkerResponse =
   | { type: 'analysis'; requestId: number; analysis: Analysis }
   | { type: 'concepts'; requestId: number; concepts: Concepts }
   | { type: 'done'; requestId: number; cancelled: boolean }
-  | { type: 'error'; requestId?: number; message: string }
+  | {
+      type: 'error'
+      requestId?: number
+      message: string
+      /** Where it happened, with the errors that caused it. For the console, not for the page. */
+      stack?: string
+    }
 
 /** Plan rule for the MVP: no KV cache, so every sequence is capped at 64 tokens (BOS included). */
 export const MAX_SEQUENCE_TOKENS = 64

@@ -30,6 +30,13 @@ async function detectBackend(): Promise<Backend> {
 const loadOrt = (backend: Backend): Promise<typeof Ort> =>
   backend === 'webgpu' ? import('onnxruntime-web/webgpu') : import('onnxruntime-web/wasm')
 
+/** The stack of an error and of the errors that caused it, as text. */
+function stackOf(err: unknown): string | undefined {
+  const parts: string[] = []
+  for (let e = err; e instanceof Error && parts.length < 4; e = e.cause) parts.push(`${e.name}: ${e.message}\n${e.stack ?? ''}`)
+  return parts.length > 0 ? parts.join('\ncaused by: ') : undefined
+}
+
 const engine = new Engine(
   {
     loadOrt,
@@ -61,8 +68,12 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
         await engine.generate(msg.requestId, msg.prompt, msg.maxNewTokens, msg.steer)
       }
     } catch (err) {
-      console.error(err)
-      post({ type: 'error', requestId: msg.type === 'generate' ? msg.requestId : undefined, message: String(err) })
+      post({
+        type: 'error',
+        requestId: msg.type === 'generate' ? msg.requestId : undefined,
+        message: String(err),
+        stack: stackOf(err),
+      })
     }
   })
 }

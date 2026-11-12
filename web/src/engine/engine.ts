@@ -160,7 +160,6 @@ export class Engine {
         this.partA = partA
         this.partB = partB
       } catch (err) {
-        console.error(`Starting the model on ${on.toUpperCase()} failed (${step})`, err)
         throw new Error(`${on.toUpperCase()} could not start the model (${step}): ${describe(err)}`, { cause: err })
       }
     }
