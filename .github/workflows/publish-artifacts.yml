@@ -1,7 +1,8 @@
 name: Publish model artifacts
 
-# Exports GPT-2 with real weights on the runner and uploads artifacts/models/ to a public
-# Hugging Face dataset, which is what the site downloads from (ARTIFACTS_URL).
+# Exports GPT-2 with real weights on the runner, adds the concept dictionary (SAE), its labels and
+# the precomputed example, and uploads artifacts/models/ to a public Hugging Face dataset, which is
+# what the site downloads from (ARTIFACTS_URL).
 # Run it by hand: Actions -> Publish model artifacts -> Run workflow. See docs/publishing.md.
 
 on:
@@ -46,6 +47,20 @@ jobs:
         run: uv run python export_onnx.py
       - name: Export steering vectors
         run: uv run python export_steering.py
+      - name: Export the concept dictionary (fails if it does not reconstruct the residual stream)
+        run: uv run python export_sae.py
+      - name: Export the concept labels
+        run: uv run python export_labels.py
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Precompute the example shown while the model downloads
+        working-directory: web
+        run: |
+          npm ci
+          npm run export-demo -- --vector sae-12102
       - name: Upload to Hugging Face
         env:
           DATASET_INPUT: ${{ inputs.dataset }}

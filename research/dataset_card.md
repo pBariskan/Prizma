@@ -21,6 +21,13 @@ models/gpt2-l6/
   part_a.onnx          blocks 0-5: token embeddings -> residual stream entering block 6, attention
   part_b.onnx          blocks 6-11 + unembedding: residual stream -> logits, top-10, attention
   steering.json        unit-norm steering directions and the strength range that works for each
+  demo.json            a precomputed example (original and steered text) shown while the model downloads
+  sae/                 the sparse autoencoder the site reads concepts with and steers along
+    manifest.json      how to encode, shapes, file names, self-check, explained variance
+    encoder.f16.bin    encoder weights, raw little-endian fp16 [24576, 768]
+    biases.f32.bin     encoder and decoder biases, fp32
+    decoder/NNNN.f16.bin   decoder rows in shards of 256, fp16
+    labels.json        one short explanation per feature
 ```
 
 GPT-2 small is split at `blocks.6.hook_resid_pre` so the browser can read and edit the residual
@@ -31,6 +38,10 @@ how closely the result matches the original model.
 ## Sources
 
 - [openai-community/gpt2](https://huggingface.co/openai-community/gpt2) (MIT license).
-- Some directions in `steering.json` are decoder rows of Joseph Bloom's open residual-stream
-  SAEs, [jbloom/GPT2-Small-SAEs-Reformatted](https://huggingface.co/jbloom/GPT2-Small-SAEs-Reformatted)
-  (`blocks.6.hook_resid_pre`), with labels checked on [Neuronpedia](https://www.neuronpedia.org/gpt2-small/6-res-jb).
+- `sae/` holds the weights of Joseph Bloom's open residual-stream SAE for `blocks.6.hook_resid_pre`,
+  [jbloom/GPT2-Small-SAEs-Reformatted](https://huggingface.co/jbloom/GPT2-Small-SAEs-Reformatted)
+  (MIT license), converted to fp16 without other changes. Some directions in `steering.json` are
+  decoder rows of the same SAE.
+- `sae/labels.json` holds the feature explanations published by
+  [Neuronpedia](https://www.neuronpedia.org/gpt2-small/6-res-jb) for that SAE (their public data
+  export). They are Neuronpedia's work, not ours, and are not covered by the license tag of this card.

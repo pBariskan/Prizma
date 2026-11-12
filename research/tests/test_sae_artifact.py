@@ -147,6 +147,24 @@ def test_export_sae_random_end_to_end(tmp_path, monkeypatch, architecture):
         assert manifest["verification"]["mean_l0"] <= 5
 
 
+def test_export_fails_below_the_minimum_explained_variance(tmp_path, monkeypatch, capsys):
+    """A random SAE explains nothing: with --min-ev the export fails and leaves no manifest behind."""
+    model_dir = tmp_path / "gpt2-random-tiny"
+    model_dir.mkdir()
+    (model_dir / "manifest.json").write_text(json.dumps({
+        "name": "gpt2-random-tiny", "source": "random", "split_layer": 2, "hook": "blocks.2.hook_resid_pre",
+        "n_layer": 4, "n_head": 4, "d_model": 64, "vocab_size": 50257,
+    }))
+    argv = ["export_sae.py", "--random", "--model-dir", str(model_dir), "--d-sae", "64"]
+    monkeypatch.setattr(sys, "argv", argv)
+    assert export_sae.main() == 0  # not checked for random SAEs by default
+    assert (model_dir / "sae" / "manifest.json").exists()
+    monkeypatch.setattr(sys, "argv", [*argv, "--min-ev", "0.5"])
+    assert export_sae.main() == 1
+    assert not (model_dir / "sae" / "manifest.json").exists()
+    assert "below --min-ev" in capsys.readouterr().err
+
+
 def test_decoder_norm_rescaling_is_folded_into_the_weights():
     """SAELens TopK with rescale_acts_by_decoder_norm == the plain recipe on the folded weights."""
     w = random_weights()

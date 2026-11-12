@@ -10,7 +10,8 @@ no web code changes. ``--folder sae-own`` writes next to the current SAE instead
 and ``/?sae=sae-own`` shows that one, so two SAEs can be compared on the same model.
 
 The export verifies itself: it reloads the fp16 files it wrote, runs the model on a few sentences,
-and writes explained variance and L0 into ``manifest.json``. It also checks the residual-centering
+and writes explained variance and L0 into ``manifest.json``; below ``--min-ev`` it fails and writes
+no manifest, so the publish workflow cannot upload a broken SAE. It also checks the residual-centering
 convention, because an SAE trained on a TransformerLens model sees a mean-centered residual stream
 while the browser has the Hugging Face one.
 """
@@ -123,6 +124,9 @@ def main() -> int:
                     help="override: the SAE expects the mean-centered residual (TransformerLens default)")
     ap.add_argument("--prepend-bos", action=argparse.BooleanOptionalAction, default=None,
                     help="override: the SAE expects contexts that start with <|endoftext|>")
+    ap.add_argument("--min-ev", type=float, default=None,
+                    help="fail below this explained variance on the calibration sentences "
+                         "(default 0.5; not checked with --random unless given)")
     ap.add_argument("--random", action="store_true",
                     help="model-dir holds a --random model; without --sae-path the SAE is random too")
     ap.add_argument("--d-sae", type=int, default=512, help="with --random: number of features")
@@ -165,6 +169,13 @@ def main() -> int:
     if not args.random and ev_flipped > ev + 0.02:
         print(f"WARNING: center_resid={settings.center_resid} explains less variance ({ev:.3f}) than the "
               f"opposite convention ({ev_flipped:.3f}). Check --center-resid.", file=sys.stderr)
+    min_ev = args.min_ev if args.min_ev is not None else (None if args.random else 0.5)
+    if min_ev is not None and ev < min_ev:
+        # An SAE that does not reconstruct this model's residual (wrong hook, wrong convention, a
+        # broken file) must not reach the site: without a manifest the folder is not an SAE.
+        (out_dir / "manifest.json").unlink(missing_ok=True)
+        print(f"ERROR: explained variance {ev:.3f} is below --min-ev {min_ev}. No manifest was written.", file=sys.stderr)
+        return 1
 
     out = sae_format.build_manifest(
         name=args.name or source,
