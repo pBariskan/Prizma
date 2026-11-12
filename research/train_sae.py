@@ -45,16 +45,19 @@ def default_run_name(lm: LM, args: argparse.Namespace) -> str:
 class StepLogger:
     """Wraps ``sae.training_forward_pass`` to keep a JSONL log of the run without Weights & Biases."""
 
-    def __init__(self, sae, path: Path, every: int, batch_tokens: int, total_tokens: int):
+    def __init__(self, sae, path: Path, every: int, batch_tokens: int, total_tokens: int, start_step: int = 0):
         self.inner = sae.training_forward_pass
         self.path = path
         self.every = every
         self.batch_tokens = batch_tokens
         self.total_tokens = total_tokens
-        self.step = 0
+        self.step = start_step  # not 0 when resuming from a checkpoint
         self.started: float | None = None
         self.last: dict = {}
-        path.write_text("")
+        kept = []
+        if start_step and path.exists():  # keep the log up to the checkpoint we continue from
+            kept = [line for line in path.read_text().splitlines() if json.loads(line)["step"] <= start_step]
+        path.write_text("".join(line + "\n" for line in kept))
 
     def __call__(self, step_input):
         out = self.inner(step_input=step_input)
@@ -83,10 +86,18 @@ class StepLogger:
                 }
             with self.path.open("a") as f:
                 f.write(json.dumps(self.last) + "\n")
+            left = (self.total_tokens - tokens) / max(self.last["tokens_per_second"], 1.0)
             print(f"[train] step {self.step:>6}  {tokens / 1e6:8.2f}M tok  mse {self.last.get('mse_loss', 0):.4f}  "
                   f"EV {self.last['explained_variance']:.3f}  L0 {self.last['l0']:.1f}  "
-                  f"dead {self.last['dead_features']}  {self.last['tokens_per_second'] / 1e3:.1f}k tok/s", flush=True)
+                  f"dead {self.last['dead_features']}  {self.last['tokens_per_second'] / 1e3:.1f}k tok/s  "
+                  f"{left / 60:.0f} min left", flush=True)
         return out
+
+
+def latest_checkpoint(run_dir: Path) -> Path | None:
+    """The newest SAELens checkpoint of a run (``checkpoints/<run id>/<tokens seen>/``), if any."""
+    found = [p.parent for p in (run_dir / "checkpoints").glob("*/*/trainer_state.pt") if p.parent.name.isdigit()]
+    return max(found, key=lambda p: int(p.name), default=None)
 
 
 @torch.no_grad()
@@ -144,7 +155,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--autocast", action="store_true", help="bfloat16 autocast for the SAE (faster, less exact)")
     ap.add_argument("--autocast-lm", action="store_true", help="bfloat16 autocast for GPT-2 (faster, less exact)")
     ap.add_argument("--checkpoints", type=int, default=None, help="checkpoints during training (default 4)")
-    ap.add_argument("--resume-from", default=None, help="checkpoint folder to resume from")
+    ap.add_argument("--resume-from", default=None,
+                    help="checkpoint folder to continue from, or 'auto' for the newest one of this run (if any)")
     ap.add_argument("--wandb", default=None, metavar="PROJECT", help="also log to this Weights & Biases project")
     ap.add_argument("--log-every", type=int, default=None, help="steps between log lines")
     ap.add_argument("--seed", type=int, default=42)
@@ -165,6 +177,13 @@ def main(argv: list[str] | None = None) -> int:
     run_dir = args.out / (args.name or default_run_name(lm, args))
     run_dir.mkdir(parents=True, exist_ok=True)
     total_steps = args.training_tokens // args.batch_tokens
+    start_step = 0
+    if args.resume_from == "auto":
+        found = latest_checkpoint(run_dir)
+        args.resume_from = str(found) if found else None
+    if args.resume_from:
+        start_step = int(torch.load(Path(args.resume_from) / "trainer_state.pt", weights_only=False)["n_training_steps"])
+        print(f"Continuing from {args.resume_from} (step {start_step} of {total_steps})")
     print(f"Training {run_dir.name}: TopK SAE {lm.d_model} -> {args.d_sae}, k={args.k}, on {lm.hook_name} of {lm.name}; "
           f"{args.training_tokens / 1e6:.1f}M tokens = {total_steps} steps on {device}")
 
@@ -222,7 +241,7 @@ def main(argv: list[str] | None = None) -> int:
     # model-level metrics come from eval.py instead.
     runner.evaluator = None
     step_logger = StepLogger(runner.sae, run_dir / "train_log.jsonl", args.log_every, args.batch_tokens,
-                             args.training_tokens)
+                             args.training_tokens, start_step)
     runner.sae.training_forward_pass = step_logger
 
     started = time.time()

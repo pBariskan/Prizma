@@ -88,14 +88,19 @@ def test_gate():
     assert gate({**close, "dead_fraction": 0.2}, base)["dead_concepts"] is False
 
 
-def test_eval_script_on_the_tiny_run(tiny_run, tmp_path):
-    assert eval_script.main(["--sae", str(tiny_run), "--random", "--tiny", "--device", "cpu", "--out", str(tmp_path),
-                             "--n-tokens", "6000"]) == 0
-    result = json.loads((tmp_path / "eval.json").read_text())
+def test_eval_script_on_the_tiny_run(tiny_run):
+    result = json.loads((tiny_run / "eval.json").read_text())
     assert result["sae"] == "tiny" and result["baseline"] == "untrained-sae" and set(result["gate"]["checks"]) == {
         "explained_variance", "loss_recovered", "dead_concepts"}
     ours, baseline = result["saes"]["tiny"], result["saes"]["untrained-sae"]
     assert ours["explained_variance"] > 0.8 > baseline["explained_variance"]
     assert 7 <= ours["l0"] <= 8 and ours["k"] == 8 and baseline["center_input"] is True
-    report = (tmp_path / "eval.md").read_text()
+    report = (tiny_run / "eval.md").read_text()
     assert "| Metric | tiny | untrained-sae |" in report and "Phase 1 gate" in report
+
+
+def test_eval_alone_without_a_baseline(tiny_run, tmp_path):
+    assert eval_script.main(["--sae", str(tiny_run), "--random", "--tiny", "--device", "cpu", "--baseline", "none",
+                             "--n-tokens", "3000", "--out", str(tmp_path)]) == 0
+    result = json.loads((tmp_path / "eval.json").read_text())
+    assert list(result["saes"]) == ["tiny"] and result["baseline"] is None and "gate" not in result

@@ -187,14 +187,13 @@ def test_anthropic_client_wire_format():
     assert interp.parse_label(failed) == {"status": "errored", "error": "invalid_request_error: bad"}
 
 
-def test_tiny_pipeline_labels(tiny_examples, tmp_path):
-    """collect_top.py output of the tiny SAE goes through the whole labeling flow."""
-    run = tiny_examples.parent
-    assert autointerp.main(["--run", str(run), "--fake", "--out", str(tmp_path / "state"), "--web-out", str(tmp_path / "web")]) == 0
-    summary = json.loads((tmp_path / "state" / "summary.json").read_text())
-    d_sae = Examples.load(tiny_examples).d_sae
+def test_tiny_pipeline_labels(tiny_run):
+    """The examples collect_top.py wrote for the tiny SAE went through the whole labeling flow."""
+    summary = json.loads((tiny_run / "autointerp" / "summary.json").read_text())
+    d_sae = Examples.load(tiny_run / "examples").d_sae
     assert summary["concepts"] == d_sae and 0 < summary["scored"] <= summary["labeled"] < d_sae
     assert 0.5 <= summary["mean_score"] <= 1.0
-    labels = json.loads((tmp_path / "web" / "labels.json").read_text())
+    labels = json.loads((tiny_run / "web" / "sae" / "labels.json").read_text())
     assert len(labels["labels"]) == len(labels["scores"]) == d_sae
-    assert len(list((tmp_path / "web" / "concepts").glob("*.json"))) == -(-d_sae // 32)
+    assert len(list((tiny_run / "web" / "sae" / "concepts").glob("*.json"))) == -(-d_sae // 32)
+    assert (tiny_run / "autointerp" / "review.md").exists()
