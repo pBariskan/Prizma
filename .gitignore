@@ -15,6 +15,8 @@ artifacts/*
 
 # Training runs: weights, checkpoints, logs, examples, labels
 research/runs/
+research/phase1.log
+research/phase1.pid
 
 # Web
 web/dist/
