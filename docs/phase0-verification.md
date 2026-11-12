@@ -163,14 +163,39 @@ clearly; military conflict (5919) works well but is grim for a demo; Paris (9191
 
 </details>
 
+## 4. The live site
+
+Sections 1 to 3 ran against the local dev server. On 2026-11-12, after the repository became
+public, the same checks were repeated on <https://pbariskan.github.io/Prizma/> in headless
+Chromium (WASM, the cloud machine has no GPU), with the model files coming from the Hugging Face
+dataset (`huggingface.co` and `us.aws.cdn.hf.co`).
+
+- **The model loads.** It is ready 13 to 17 s after the page opens with an empty cache, at 0.4 to
+  0.6 s per token, with no console errors and no failed requests.
+- **Steering gives the same texts as locally.** "I think that you are" continues with "right. I
+  think that you are right." and, with Weddings (12102) at 0.5x, with "going to be the bride of a
+  big day." "The weather today is" continues with "a bit different than it was yesterday." and,
+  with Space missions (16285) at 0.5x, with "getting closer to the sun, and the first ever mission
+  to the Sun's closest approach ever is scheduled".
+- **The four views work.** The precomputed example can be explored while the model downloads.
+  On a generated text, Next word, Attention and Concepts open, pointing at a word previews it and
+  the panel returns to the selected word afterwards. "Steer with it" on a concept (" Paris" ->
+  "mentions of Paris", 9191) opens the Steering view and rewrites the text, and a click on a
+  steered word opens it in Concepts on the steered text.
+- **A share link restores the screen.** The link copied there (`vector=sae-9191`, `strength=0.5`,
+  `token=s16`, `view=concepts`, `concept=9191`) shows the same text, steering, word, view and
+  pinned concept in a fresh tab.
+- **The rest of the page.** An example start and the Enter key run the model, nothing scrolls
+  sideways at 390 px width, and the dark colour scheme renders.
+
 ## Not verified
 
 - **WebGPU on a real GPU.** The cloud machine has none. Open the site in Chrome on a laptop: the
-  status row should say `WebGPU` and a token should take tens of milliseconds, not half a second.
+  header should say `WebGPU` and a token should take tens of milliseconds, not half a second.
 - **Other browsers.** Only Chromium was run. Safari and Firefox fall back to WASM where WebGPU is
   missing.
-- **The live site.** Everything above ran against the local dev server. Loading the files from
-  the Hugging Face dataset is checked once the artifacts are published (`docs/publishing.md`).
+- **Touch.** Only the layout was checked at phone width. On a real phone a tap selects a word, and
+  the candidate popup of the Steering view has no touch equivalent.
 
 ## Reproduce
 
