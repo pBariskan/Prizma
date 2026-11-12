@@ -240,9 +240,11 @@ export default function App() {
   const labelOf = (feature: number) => labels?.[feature] ?? demoLabels[feature] ?? null
   const vector = steering?.vectors.find((v) => v.id === vectorId)
   const feature = saeFeatureOf(vectorId)
+  // The example brings the name of its direction along, so the heading does not change when steering.json arrives.
   const vectorLabel =
     vector?.label ??
-    (feature !== null ? `${labelOf(feature) ?? 'Concept'} (#${feature})` : (demoLabels[`vector:${vectorId}`] ?? null))
+    demoLabels[`vector:${vectorId}`] ??
+    (feature !== null ? `${labelOf(feature) ?? 'Concept'} (#${feature})` : null)
   const range = rangeOf(vectorId, steering)
 
   const selectedRun = selection ? runs[selection.run] : null
