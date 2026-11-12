@@ -196,8 +196,12 @@ dataset (`huggingface.co` and `us.aws.cdn.hf.co`).
   header should say `WebGPU` and a token should take tens of milliseconds, not half a second.
 - **Safari does not load the model.** Reported on 2026-11-12 from Safari on macOS, on the live
   site: the page and the precomputed example appear, then starting the model stops with
-  `RangeError: Maximum call stack size exceeded`. Everything in section 4 is Chromium only. The
-  cause is not found yet; Safari cannot be run on the cloud machine.
+  `RangeError: Maximum call stack size exceeded`. Everything in section 4 is Chromium only.
+  The likely cause was found the same day: the tokenizer ships the GPT-2 vocabulary as one array
+  literal with 50,256 entries, and JavaScriptCore needs more stack to build it than WebKit gives
+  a worker, so the worker stops before any model file is requested. A fix that ships the
+  vocabulary as JSON text is in pull request #6 (`docs/decisions.md` has the details once it is
+  merged). It has not been confirmed in Safari yet: Safari cannot be run on the cloud machine.
 - **Firefox.** Not run. It should fall back to WASM where WebGPU is missing.
 - **Touch.** Only the layout was checked at phone width. On a real phone a tap selects a word, and
   the candidate popup of the Steering view has no touch equivalent.
