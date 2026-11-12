@@ -51,6 +51,9 @@ uv run python export_onnx.py                      # needs huggingface.co; -> art
 uv run python export_steering.py                  # -> artifacts/models/gpt2-l6/steering.json
 uv run python export_onnx.py --random --tiny --split-layer 2   # offline test model
 uv run python export_steering.py --random --model-dir ../artifacts/models/gpt2-random-tiny
+uv run python run_phase1.py --random --tiny       # Phase 1 pipeline offline: train, examples, eval, labels
+uv run python run_phase1.py                       # real run on a rented GPU: docs/gpu-runbook.md
+uv run python autointerp.py --run runs/<name>     # labeling dry run; --submit sends batches and costs money
 
 # Web (Node 20+)
 cd web
@@ -78,6 +81,10 @@ Model files come from a CDN set in the `ARTIFACTS_URL` repository variable (e.g.
 - Web: anything that touches the model runs in `src/engine/model.worker.ts`. Pure math lives in
   small modules (`steering.ts`, `embeddings.ts`) with Vitest tests.
 - When the artifact format changes, update `artifacts/README.md`, `protocol.ts` and this file together.
+- Phase 1 scripts all take `--random` / `--tiny` and write to `research/runs/<name>/` (never
+  committed). `prizma_research/sae.py` is the reference for the SAE math the browser runs.
+- Paid steps are started by a person, never by an agent: renting a GPU and
+  `autointerp.py --submit` (Claude API). Prepare, dry-run and document them instead.
 
 ## Roadmap
 

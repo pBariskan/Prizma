@@ -61,7 +61,7 @@ website that consumes its outputs. All computation happens in the visitor's brow
 ### SAE training (Phase 1)
 
 - TopK SAE, 16,384 concepts, k = 32, on GPT-2's layer-6 residual stream.
-- ~200M tokens of OpenWebText, SAELens, one rented A100/H100 for a few hours.
+- ~200M tokens of OpenWebText, SAELens, one rented RTX 4090 for 2-3 hours ([runbook](gpu-runbook.md)).
 - Metrics: explained variance, mean L0, LM loss increase with the SAE spliced in, dead-concept
   rate; all compared against an open GPT-2 SAE.
 
@@ -69,7 +69,7 @@ website that consumes its outputs. All computation happens in the visitor's brow
 
 - For each concept, the top 20 activating snippets over ~10M tokens.
 - Claude Haiku writes a short label and a one-sentence description per concept (Batch API).
-- A sample of labels is scored in a second pass: Haiku sees only the label and predicts where the
+- Every label is scored in a second pass: Haiku sees only the label and predicts where the
   concept fires. The score goes on the behind-the-scenes page.
 - Outputs are sharded JSON on a CDN; the site downloads only the shard for the concept it opens.
 
@@ -95,8 +95,8 @@ Most important rule: no new features until Phase 2 ships a live version.
 
 | Item | Estimate |
 | --- | --- |
-| Rented GPU (SAE training + example collection, a few attempts) | $10-40 |
-| Claude Haiku labelling + scoring of 16k concepts (Batch API) | $20-50 |
+| Rented GPU (SAE training + example collection, a few attempts) | $2-4 per attempt, $10 minimum top-up (re-estimated 2026-11-12, was $10-40) |
+| Claude Haiku labelling + scoring of 16k concepts (Batch API) | $5-6 (re-estimated 2026-11-12, was $20-50) |
 | Hosting (GitHub Pages + a Hugging Face dataset for model files) | free |
 | Domain (optional) | $10-15 / year |
 

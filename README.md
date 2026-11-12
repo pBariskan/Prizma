@@ -69,7 +69,7 @@ variable (*Settings → Secrets and variables → Actions → Variables*).
 | Phase | Content | Status |
 | --- | --- | --- |
 | 0 Prototype | Split GPT-2 running in the browser; a steering vector changes the output | in progress |
-| 1 Own SAE | TopK SAE (16k concepts) on layer 6, metrics vs. an open SAE, Claude Haiku concept labels | |
+| 1 Own SAE | TopK SAE (16k concepts) on layer 6, metrics vs. an open SAE, Claude Haiku concept labels | pipeline written and tested offline; the GPU run and the labeling are next ([runbook](docs/gpu-runbook.md)) |
 | 2 MVP + launch | Next word, Attention, Concepts and Steering views, share links, live site | |
 | 3 Story | Concept explorer, guided tours, behind-the-scenes write-up, demo video | |
 
