@@ -43,6 +43,12 @@ It throws `RangeError: Maximum call stack size exceeded.` on a build without the
 model runs: ONNX Runtime was checked separately, both builds create and run the two sessions in
 JavaScriptCore with a 512 KB and a 256 KB stack.
 
+**Checked in WebKit before the merge.** Playwright's WebKit 27.2 on a Mac (macOS 27, Apple
+silicon) opened the live site with the same rewrite applied to its worker script on the fly. The
+unchanged site failed as before. With the rewrite the model loaded on the default backend (WebGPU),
+with `backend=wasm` and with `backend=webgpu`, and both texts matched Chromium's word for word
+(2 s to generate both on WebGPU, 21 s in slow mode).
+
 **In the same change.** The engine now loads ONNX Runtime Web on demand, in the build that fits the
 backend: slow mode runs on the plain WebAssembly build (15 MB) instead of the WebGPU build, whose
 WebAssembly is instrumented to wait for the GPU and is twice as large (29 MB). This was first
