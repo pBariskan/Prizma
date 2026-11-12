@@ -3,6 +3,7 @@ import type { Run } from '../state/run'
 import { AttentionArcs } from './AttentionArcs'
 import { CandidateList } from './CandidateList'
 
+const TOOLTIP_WIDTH = 270
 const BOS_HINT = 'Start-of-text marker. The model was trained with it in front of every document, so Prizma adds it too.'
 
 /**
@@ -31,16 +32,18 @@ export function TokenStream({
   stale?: boolean
 }) {
   const ref = useRef<HTMLDivElement>(null)
-  const [hover, setHover] = useState<{ pos: number; alignRight: boolean } | null>(null)
+  const [hover, setHover] = useState<{ pos: number; shift: number } | null>(null)
 
   if (!run || run.tokens.length === 0) {
     return <div className="token-stream empty">{placeholder}</div>
   }
 
+  // The tooltip hangs below the token; near the right edge it slides left to stay inside the panel.
   const enter = (pos: number, el: HTMLElement) => {
     const box = ref.current?.getBoundingClientRect()
-    const alignRight = !!box && el.getBoundingClientRect().left - box.left > box.width - 290
-    setHover({ pos, alignRight })
+    const left = (el.getClientRects()[0] ?? el.getBoundingClientRect()).left
+    const overflow = box ? left + TOOLTIP_WIDTH - box.right : 0
+    setHover({ pos, shift: box ? -Math.max(0, Math.min(overflow, left - box.left)) : 0 })
   }
 
   return (
@@ -61,7 +64,10 @@ export function TokenStream({
             tabIndex={0}
             aria-pressed={pos === selected}
             title={token.kind === 'bos' ? BOS_HINT : undefined}
-            onClick={() => onSelect(pos)}
+            onClick={() => {
+              setHover(null) // the views below now show this token in full
+              onSelect(pos)
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault()
@@ -75,7 +81,7 @@ export function TokenStream({
           >
             {token.kind === 'bos' ? <span className="word">start</span> : <TokenBody text={token.text} />}
             {hover?.pos === pos && candidates && (
-              <span className={`tooltip${hover.alignRight ? ' right' : ''}`} role="tooltip">
+              <span className="tooltip" role="tooltip" style={{ left: hover.shift, width: TOOLTIP_WIDTH }}>
                 <span className="tooltip-title">The model's top {candidates.length} for this position</span>
                 <CandidateList candidates={candidates} chosenId={token.tokenId} />
               </span>

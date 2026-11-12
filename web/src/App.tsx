@@ -29,8 +29,13 @@ const client = new ModelClient()
 const VIEW_NAMES: Record<View, string> = { next: 'Next word', attention: 'Attention', concepts: 'Concepts' }
 /** How long the slider has to rest before the text is regenerated. */
 const STEER_DEBOUNCE_MS = 250
-/** Slider position used when a concept is picked for steering while the slider is at zero. */
-const CONCEPT_START_STRENGTH = 1
+/**
+ * SAE decoder directions are much more potent than the ActAdd contrast vectors: with the open
+ * GPT-2 SAE the text follows the concept at about 0.5x and collapses into repetition near 1x.
+ * Used for SAE features that have no range of their own in steering.json.
+ */
+const SAE_RANGE: [number, number] = [-1, 1]
+const SAE_START_STRENGTH = 0.5
 
 const steerKey = (vectorId: string, strength: number) => (vectorId && strength !== 0 ? `${vectorId}@${strength}` : '')
 
@@ -197,7 +202,8 @@ export default function App() {
   const vectorLabel =
     vector?.label ??
     (feature !== null ? `${labelOf(feature) ?? 'Concept'} (#${feature})` : (demoLabels[`vector:${vectorId}`] ?? null))
-  const range = vector?.range ?? steering?.suggested_range ?? [-2, 2]
+  const isSaeVector = vector ? vector.source === 'sae' : feature !== null
+  const range = vector?.range ?? (isSaeVector ? SAE_RANGE : (steering?.suggested_range ?? [-2, 2]))
 
   const selectedRun = selection ? runs[selection.run] : null
   const pos = selection && selectedRun && selection.pos < selectedRun.tokens.length ? selection.pos : null
@@ -291,7 +297,9 @@ export default function App() {
         onVector={(id) => {
           setVectorId(id)
           const next = steering?.vectors.find((v) => v.id === id)
-          if (next?.default_strength !== undefined) setStrength(next.default_strength)
+          const sae = next ? next.source === 'sae' : saeFeatureOf(id) !== null
+          const [lo, hi] = next?.range ?? (sae ? SAE_RANGE : (steering?.suggested_range ?? [-2, 2]))
+          setStrength(next?.default_strength ?? (sae ? SAE_START_STRENGTH : Math.min(Math.max(strength, lo), hi)))
         }}
         strength={strength}
         range={range}
@@ -364,7 +372,7 @@ export default function App() {
             canSteer={ready}
             onSteer={(f) => {
               setVectorId(saeVectorId(f))
-              if (strength === 0) setStrength(CONCEPT_START_STRENGTH)
+              setStrength(SAE_START_STRENGTH)
             }}
           />
         )}

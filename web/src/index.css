@@ -78,7 +78,7 @@ button.ghost:hover:not(:disabled), a.ghost:hover { background: var(--accent-soft
 .token-stream.empty { color: var(--muted); font-size: 0.9rem; line-height: 1.5; }
 .token-stream.stale { opacity: 0.45; }
 .token { position: relative; cursor: pointer; outline: none; }
-.token .word { border-radius: 4px; padding: 3px 1px; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.token .word { border-radius: 4px; padding: 3px 0; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
 .token.prompt { color: var(--muted); }
 .token.bos { margin-right: 6px; }
 .token.bos .word {
@@ -96,11 +96,10 @@ button.ghost:hover:not(:disabled), a.ghost:hover { background: var(--accent-soft
 .attention-arcs path { fill: none; stroke: var(--accent); stroke-linecap: round; }
 
 .tooltip {
-  position: absolute; top: 2.1em; left: 0; z-index: 10; width: 270px; display: grid; gap: 4px;
+  position: absolute; top: 2.1em; left: 0; z-index: 10; display: grid; gap: 4px;
   background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
   box-shadow: 0 8px 24px rgb(0 0 0 / 0.18); font-size: 0.8rem; line-height: 1.5; white-space: normal; cursor: default;
 }
-.tooltip.right { left: auto; right: 0; }
 .tooltip-title { color: var(--muted); }
 
 /* Bars shared by candidates, attended tokens and concepts */
