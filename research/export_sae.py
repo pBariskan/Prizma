@@ -4,7 +4,7 @@
     uv run python export_sae.py --sae-path runs/prizma-topk-16k   # our own SAE (a SAELens save folder)
     uv run python export_sae.py --random --model-dir ../artifacts/models/gpt2-random-tiny   # tests, no download
 
-Writes ``<model-dir>/sae/`` (format in ``artifacts/README.md`` and ``prizma_research/sae.py``).
+Writes ``<model-dir>/sae/`` (format in ``artifacts/README.md`` and ``prizma_research/sae_artifact.py``).
 Swapping the SAE the site uses means running this script on another SAE and uploading the folder;
 no web code changes.
 
@@ -23,9 +23,9 @@ from pathlib import Path
 
 import torch
 
-from prizma_research import sae as sae_format
+from prizma_research import sae_artifact as sae_format
 from prizma_research.gpt2_split import GPT2
-from prizma_research.sae import BOS_TOKEN_ID, SaeSettings
+from prizma_research.sae_artifact import BOS_TOKEN_ID, SaeSettings
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 OPEN_SAE_REPO = "jbloom/GPT2-Small-SAEs-Reformatted"
@@ -51,6 +51,11 @@ def load_sae(args, manifest: dict) -> tuple[dict[str, torch.Tensor], dict, str, 
     from safetensors.torch import load_file
 
     layer = manifest["split_layer"]
+    if args.sae_path:
+        cfg = json.loads((args.sae_path / "cfg.json").read_text())
+        weights = load_file(args.sae_path / "sae_weights.safetensors")
+        return weights, cfg, args.sae_path.name, None
+
     if args.random:
         d_model, d_sae = manifest["d_model"], args.d_sae
         g = torch.Generator().manual_seed(0)
@@ -63,12 +68,6 @@ def load_sae(args, manifest: dict) -> tuple[dict[str, torch.Tensor], dict, str, 
         }
         cfg = {"architecture": args.architecture, "k": args.k, "model_from_pretrained_kwargs": {"center_writing_weights": False}}
         return weights, cfg, "random", None
-
-    if args.sae_path:
-        folder = args.sae_path
-        cfg = json.loads((folder / "cfg.json").read_text())
-        weights = load_file(folder / "sae_weights.safetensors")
-        return weights, cfg, str(folder.name), None
 
     from huggingface_hub import hf_hub_download
 
@@ -121,7 +120,8 @@ def main() -> int:
                     help="override: the SAE expects the mean-centered residual (TransformerLens default)")
     ap.add_argument("--prepend-bos", action=argparse.BooleanOptionalAction, default=None,
                     help="override: the SAE expects contexts that start with <|endoftext|>")
-    ap.add_argument("--random", action="store_true", help="random SAE (model-dir must hold a --random model)")
+    ap.add_argument("--random", action="store_true",
+                    help="model-dir holds a --random model; without --sae-path the SAE is random too")
     ap.add_argument("--d-sae", type=int, default=512, help="with --random: number of features")
     ap.add_argument("--architecture", choices=["standard", "topk"], default="standard", help="with --random")
     ap.add_argument("--k", type=int, default=32, help="with --random --architecture topk")
@@ -130,6 +130,7 @@ def main() -> int:
     manifest = json.loads((args.model_dir / "manifest.json").read_text())
     weights, cfg, source, neuronpedia = load_sae(args, manifest)
     weights = {k: weights[k].float() for k in ("W_enc", "b_enc", "W_dec", "b_dec")}
+    weights = sae_format.fold_decoder_norm(weights, cfg)
     if weights["W_enc"].shape[0] != manifest["d_model"]:
         ap.error(f"SAE d_in {weights['W_enc'].shape[0]} does not match the model's d_model {manifest['d_model']}")
 
@@ -163,7 +164,7 @@ def main() -> int:
               f"opposite convention ({ev_flipped:.3f}). Check --center-resid.", file=sys.stderr)
 
     out = sae_format.build_manifest(
-        name=args.name or ("random" if args.random else source),
+        name=args.name or source,
         source=source,
         hook=manifest["hook"],
         settings=settings,

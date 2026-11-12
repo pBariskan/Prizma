@@ -2,7 +2,8 @@
 
 The site encodes the residual stream in JavaScript, so the format is deliberately dumb: raw
 little-endian arrays plus a manifest that says how to use them. ``encode`` below is the reference
-the browser implementation (``web/src/engine/sae.ts``) must reproduce.
+the browser implementation (``web/src/engine/sae.ts``) must reproduce. (Loading and training SAEs
+is not this module's job; it only knows the web artifact.)
 
 Layout of ``artifacts/models/<name>/sae/`` (see ``artifacts/README.md``):
 
@@ -57,8 +58,6 @@ def settings_from_cfg(cfg: dict) -> SaeSettings:
         raise ValueError(f"unsupported SAE architecture {architecture!r} (supported: standard, topk)")
     if get("normalize_activations", "none") not in ("none", None, False):
         raise ValueError("normalize_activations must be 'none': fold the scaling into the weights before saving")
-    if get("rescale_acts_by_decoder_norm", False):
-        raise ValueError("rescale_acts_by_decoder_norm is set: call sae.fold_W_dec_norm() before saving")
 
     k = None
     if architecture == "topk":
@@ -76,6 +75,24 @@ def settings_from_cfg(cfg: dict) -> SaeSettings:
         apply_b_dec_to_input=bool(get("apply_b_dec_to_input", True)),
         prepend_bos=bool(get("prepend_bos", True)),
     )
+
+
+def fold_decoder_norm(w: dict[str, torch.Tensor], cfg: dict) -> dict[str, torch.Tensor]:
+    """Fold SAELens' ``rescale_acts_by_decoder_norm`` into the weights, so the browser needs no extra step.
+
+    With that flag SAELens multiplies the pre-activations by the decoder row norms and divides the
+    activations by them again before decoding. Scaling the encoder by the norms and normalising the
+    decoder rows gives exactly the same activations and reconstruction with the plain recipe.
+    """
+    if not cfg.get("rescale_acts_by_decoder_norm", False):
+        return w
+    norms = w["W_dec"].norm(dim=-1)
+    return {
+        "W_enc": w["W_enc"] * norms,
+        "b_enc": w["b_enc"] * norms,
+        "W_dec": w["W_dec"] / norms[:, None],
+        "b_dec": w["b_dec"],
+    }
 
 
 def encode(x: torch.Tensor, w: dict[str, torch.Tensor], s: SaeSettings) -> torch.Tensor:

@@ -8,8 +8,8 @@ import pytest
 import torch
 
 import export_sae
-from prizma_research import sae as sae_format
-from prizma_research.sae import SaeSettings
+from prizma_research import sae_artifact as sae_format
+from prizma_research.sae_artifact import SaeSettings
 
 # cfg.json of jbloom/GPT2-Small-SAEs-Reformatted (the keys that matter; the rest is training metadata).
 LEGACY_CFG = {"model_name": "gpt2-small", "hook_point": "blocks.6.hook_resid_pre", "d_in": 768, "d_sae": 24576}
@@ -49,7 +49,6 @@ def test_saelens_v6_topk_cfg():
     {"architecture": "jumprelu"},
     {"architecture": "topk"},
     {"normalize_activations": "expected_average_only_in"},
-    {"architecture": "topk", "k": 4, "rescale_acts_by_decoder_norm": True},
 ])
 def test_unsupported_cfgs_are_rejected(cfg):
     with pytest.raises(ValueError):
@@ -146,3 +145,53 @@ def test_export_sae_random_end_to_end(tmp_path, monkeypatch, architecture):
     assert np.allclose(acts[manifest["selfcheck"]["features"]].numpy(), manifest["selfcheck"]["acts"], rtol=1e-4, atol=1e-5)
     if architecture == "topk":
         assert manifest["verification"]["mean_l0"] <= 5
+
+
+def test_decoder_norm_rescaling_is_folded_into_the_weights():
+    """SAELens TopK with rescale_acts_by_decoder_norm == the plain recipe on the folded weights."""
+    w = random_weights()
+    x = torch.randn(6, 16)
+    s = SaeSettings("topk", 5, center_resid=False, apply_b_dec_to_input=True, prepend_bos=True)
+    norms = w["W_dec"].norm(dim=-1)
+    # What SAELens computes: scale the pre-activations, top-k, then undo the scale before decoding.
+    pre = ((x - w["b_dec"]) @ w["W_enc"] + w["b_enc"]) * norms
+    top = pre.topk(5, dim=-1)
+    acts = torch.zeros_like(pre).scatter_(-1, top.indices, top.values.relu())
+    recon = (acts / norms) @ w["W_dec"] + w["b_dec"]
+
+    folded = sae_format.fold_decoder_norm(w, {"rescale_acts_by_decoder_norm": True})
+    assert torch.allclose(sae_format.encode(x, folded, s), acts, atol=1e-5)
+    assert torch.allclose(sae_format.decode(sae_format.encode(x, folded, s), folded), recon, atol=1e-5)
+    assert torch.allclose(folded["W_dec"].norm(dim=-1), torch.ones(40), atol=1e-6)
+    assert sae_format.fold_decoder_norm(w, {}) is w
+
+
+def test_export_own_sae_from_a_saelens_folder(tmp_path, monkeypatch):
+    """--sae-path with a SAELens v6 TopK save: the swap from the open SAE to ours."""
+    from safetensors.torch import save_file
+
+    model_dir = tmp_path / "gpt2-random-tiny"
+    model_dir.mkdir()
+    (model_dir / "manifest.json").write_text(json.dumps({
+        "name": "gpt2-random-tiny", "source": "random", "split_layer": 2, "hook": "blocks.2.hook_resid_pre",
+        "n_layer": 4, "n_head": 4, "d_model": 64, "vocab_size": 50257,
+    }))
+    run = tmp_path / "prizma-topk-test"
+    run.mkdir()
+    w = random_weights(d_model=64, d_sae=96)
+    save_file(w, run / "sae_weights.safetensors")
+    (run / "cfg.json").write_text(json.dumps({
+        "architecture": "topk", "k": 8, "d_in": 64, "d_sae": 96, "apply_b_dec_to_input": True,
+        "normalize_activations": "none", "rescale_acts_by_decoder_norm": True,
+        "metadata": {"prepend_bos": True, "hook_name": "blocks.2.hook_resid_pre",
+                     "model_from_pretrained_kwargs": {"center_writing_weights": False}},
+    }))
+    monkeypatch.setattr(sys, "argv", ["export_sae.py", "--random", "--model-dir", str(model_dir), "--sae-path", str(run)])
+    assert export_sae.main() == 0
+
+    manifest, settings = sae_format.read_manifest(model_dir / "sae")
+    assert settings == SaeSettings("topk", 8, center_resid=False, apply_b_dec_to_input=True, prepend_bos=True)
+    assert manifest["d_sae"] == 96 and manifest["source"] == "prizma-topk-test" and "neuronpedia" not in manifest
+    assert manifest["verification"]["mean_l0"] <= 8
+    stored = sae_format.read_weights(model_dir / "sae", manifest)
+    assert torch.allclose(stored["W_dec"].norm(dim=-1), torch.ones(96), atol=1e-3)  # decoder norms were folded
