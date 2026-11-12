@@ -88,8 +88,9 @@ Development: `model`, `sae` (another SAE folder of the model), `backend=webgpu|w
 
 GitHub Pages, deployed by `.github/workflows/pages.yml` on every push to `main` (base path
 `/Prizma/`). No custom headers are possible there, so nothing may depend on cross-origin isolation.
-Model files come from a public Hugging Face dataset set in the `ARTIFACTS_URL` repository variable
-(`https://huggingface.co/datasets/<user>/prizma-artifacts/resolve/main/models`), never from the repo.
+Model files come from a public Hugging Face dataset, never from the repo. Its address
+(`https://huggingface.co/datasets/poyri/prizma-artifacts/resolve/main/models`) is the default
+in `pages.yml`; the `ARTIFACTS_URL` repository variable replaces it when set.
 `.github/workflows/publish-artifacts.yml` (run by hand) exports with real weights on the runner and
 uploads there, using the `HF_TOKEN` repository secret. Steps and links: [docs/publishing.md](docs/publishing.md).
 The browser caches model files under their SHA-256 from `manifest.json`, so a re-export needs no
@@ -129,5 +130,6 @@ cache busting.
 ## Status
 
 Phase 0 gate passed on 2026-11-12 with real GPT-2 weights
-([docs/phase0-verification.md](docs/phase0-verification.md)). The site is not live until the
-artifacts are published and Pages is enabled. See the status line at the top of [README.md](README.md).
+([docs/phase0-verification.md](docs/phase0-verification.md)). The repository is public and the
+site is live at <https://pbariskan.github.io/Prizma/> since the same day, with the Phase 2 views on
+the open GPT-2 SAE. See the status line at the top of [README.md](README.md).
