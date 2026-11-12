@@ -5,7 +5,8 @@ The offline pipeline that produces everything in `artifacts/`.
 | Script | Phase | What it does |
 | --- | --- | --- |
 | `export_onnx.py` | 0 | Splits GPT-2 at `blocks.{L}.hook_resid_pre` into two ONNX parts, quantizes them, verifies against Hugging Face |
-| `export_steering.py` | 0 | Steering directions: ActAdd contrast vectors and open-SAE decoder rows |
+| `export_steering.py` | 0 | Steering directions: ActAdd contrast vectors and curated open-SAE decoder rows, with the strength range that works for each |
+| `check_steering.py` | 0 | Runs the exported ONNX parts like the browser does and prints original vs. steered text (strength sweeps, regression checks) |
 | `train_sae.py` | 1 | TopK SAE (16,384 concepts, k=32) on the layer-6 residual stream with SAELens |
 | `collect_top.py` | 1 | Top-20 activating snippets per concept over ~10M tokens |
 | `autointerp.py` | 1 | Claude Haiku labels and descriptions (Batch API), plus a scoring pass |
@@ -18,3 +19,9 @@ uv sync
 uv run --group dev pytest
 uv run python export_onnx.py --help
 ```
+
+`export_onnx.py` checks its own output against Hugging Face on real sentences and exits with an
+error when top-1 agreement falls below `--min-top1` (0.97). The numbers from the first run with
+real weights are in [docs/phase0-verification.md](../docs/phase0-verification.md).
+`dataset_card.md` is the README of the Hugging Face dataset the artifacts are published to
+([docs/publishing.md](../docs/publishing.md)).

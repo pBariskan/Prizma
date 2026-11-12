@@ -12,7 +12,7 @@ Decisions and their reasons: [docs/decisions.md](docs/decisions.md).
 - **The site stays fully static.** No accounts, no server-side compute, no models above ~1B params.
 - **No new features before Phase 2 ships.** A live MVP comes first; everything else builds on it.
 - **`artifacts/` is never committed.** It is the contract between `research/` and `web/` and is
-  uploaded to a CDN (Cloudflare R2 or a Hugging Face dataset).
+  published to a public Hugging Face dataset ([docs/publishing.md](docs/publishing.md)).
 
 ## Architecture
 
@@ -20,6 +20,7 @@ Decisions and their reasons: [docs/decisions.md](docs/decisions.md).
 research/ (Python, uv)                     artifacts/                      web/ (React + Vite + TS)
   export_onnx.py   GPT-2 -> part A, part B  models/<name>/                   src/engine/  Web Worker, ORT Web,
   export_steering.py steering directions      manifest.json                               SAE encode, steering
+  check_steering.py browser pipeline in Py
   train_sae.py     (Phase 1)                  embeddings.f16.bin             src/views/   Next word, Attention,
   collect_top.py   (Phase 1)                  part_a.onnx, part_b.onnx                    Concepts, Steering
   autointerp.py    (Phase 1)                  steering.json                  src/tours/   guided tours (v2)
@@ -28,17 +29,21 @@ research/ (Python, uv)                     artifacts/                      web/ 
 
 The model is split at the residual stream entering block 6 (`blocks.6.hook_resid_pre`):
 
-1. The worker looks up token embeddings in JS from `embeddings.f16.bin` (fp16 Gather is not
-   supported on every WebGPU device, and an fp32 table would add ~150 MB).
+1. The worker puts BOS (`<|endoftext|>`, `manifest.prepend_bos`) in front of the prompt and looks
+   up token embeddings in JS from `embeddings.f16.bin` (fp16 Gather is not supported on every
+   WebGPU device, and an fp32 table would add ~150 MB).
 2. **Part A** (`tok_embeds [1,T,768]` -> `resid [1,T,768]`, `attn [1,6,12,T,T]`) runs blocks 0-5.
 3. In between, the browser edits the residual stream: SAE encode for the Concepts view, and
    `resid += strength * typical_norm * direction` for steering.
 4. **Part B** (`resid` -> `last_logits [1,V]`, `topk_probs/topk_ids [1,T,10]`, `attn [1,6,12,T,T]`)
-   runs blocks 6-11 and the unembedding.
+   runs blocks 6-11 and the unembedding. GPT-2 ties the unembedding to the token embeddings, so
+   `part_b.onnx` does not contain it: the graph points at `embeddings.f16.bin` as ONNX external
+   data (`manifest.external_data`) and the worker passes the bytes it already downloaded.
 
-Runtime: ONNX Runtime Web with WebGPU, WASM fallback. Weights are 8-bit block-quantized
-(`MatMulNBits`), ~220 MB total. MVP has no KV cache: sequences are capped at 64 tokens and the full
-sequence is re-run for every new token.
+Runtime: ONNX Runtime Web with WebGPU, WASM fallback. The transformer blocks are 8-bit
+block-quantized (`MatMulNBits`, asymmetric); the unembedding is never quantized (it is the one
+matrix where 8 bits visibly change the predictions). ~180 MB total. MVP has no KV cache: sequences
+are capped at 64 tokens and the full sequence is re-run for every new token.
 
 ## Commands
 
@@ -49,6 +54,7 @@ uv sync
 uv run --group dev pytest                         # split model must match Hugging Face GPT-2
 uv run python export_onnx.py                      # needs huggingface.co; -> artifacts/models/gpt2-l6
 uv run python export_steering.py                  # -> artifacts/models/gpt2-l6/steering.json
+uv run python check_steering.py                   # original vs. steered text, same pipeline as the browser
 uv run python export_onnx.py --random --tiny --split-layer 2   # offline test model
 uv run python export_steering.py --random --model-dir ../artifacts/models/gpt2-random-tiny
 
@@ -67,14 +73,22 @@ URL parameters: `model`, `prompt`, `vector`, `strength`, `backend=webgpu|wasm`.
 
 GitHub Pages, deployed by `.github/workflows/pages.yml` on every push to `main` (base path
 `/Prizma/`). No custom headers are possible there, so nothing may depend on cross-origin isolation.
-Model files come from a CDN set in the `ARTIFACTS_URL` repository variable (e.g.
-`https://huggingface.co/datasets/<user>/prizma-artifacts/resolve/main/models`), never from the repo.
+Model files come from a public Hugging Face dataset set in the `ARTIFACTS_URL` repository variable
+(`https://huggingface.co/datasets/<user>/prizma-artifacts/resolve/main/models`), never from the repo.
+`.github/workflows/publish-artifacts.yml` (run by hand) exports with real weights on the runner and
+uploads there, using the `HF_TOKEN` repository secret. Steps and links: [docs/publishing.md](docs/publishing.md).
+The browser caches model files under their SHA-256 from `manifest.json`, so a re-export needs no
+cache busting.
 
 ## Conventions
 
 - Python: plain PyTorch for the exported graph (`research/prizma_research/gpt2_split.py`), so the
-  ONNX graph is small and predictable. Every export verifies itself against Hugging Face and writes
-  the numbers into `manifest.json`.
+  ONNX graph is small and predictable. Every export verifies itself against Hugging Face on real
+  sentences (not random token ids, and not only random weights: both hid a real problem once),
+  writes the numbers into `manifest.json` and fails below `--min-top1`.
+- Steering strengths are in units of the typical residual norm. SAE features work at about
+  0.25x-0.75x, ActAdd vectors up to about 1x; each vector in `steering.json` carries its own
+  `range` and `default_strength`.
 - Web: anything that touches the model runs in `src/engine/model.worker.ts`. Pure math lives in
   small modules (`steering.ts`, `embeddings.ts`) with Vitest tests.
 - When the artifact format changes, update `artifacts/README.md`, `protocol.ts` and this file together.
@@ -91,4 +105,6 @@ Model files come from a CDN set in the `ARTIFACTS_URL` repository variable (e.g.
 
 ## Status
 
-Phase 0 in progress. See the "Status" section of [README.md](README.md).
+Phase 0 gate passed on 2026-11-12 with real GPT-2 weights
+([docs/phase0-verification.md](docs/phase0-verification.md)). The site is not live until the
+artifacts are published and Pages is enabled. See the status line at the top of [README.md](README.md).
