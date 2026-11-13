@@ -4,8 +4,8 @@ Date: 2026-11-12. Gate from the plan: **steering visibly changes the output in t
 
 **Result: passed.** Real GPT-2 small, exported by `research/export_onnx.py`, runs in Chromium and
 a steering vector added between the two halves changes the generated text in every case tried.
-Still open: speed on a real GPU through WebGPU, and Safari, which does not load the model yet
-(see [Known problems and not verified](#known-problems-and-not-verified)).
+Still open: the Safari app itself (its engine was checked, section 4) and speed in Chrome on a
+real GPU (see [Not verified](#not-verified)).
 
 ![Original vs. steered text with the Weddings feature](img/phase0-steering-weddings.png)
 
@@ -166,42 +166,47 @@ clearly; military conflict (5919) works well but is grim for a demo; Paris (9191
 
 ## 4. The live site
 
-Sections 1 to 3 ran against the local dev server. On 2026-11-12, after the repository became
-public, the same checks were repeated on <https://pbariskan.github.io/Prizma/> in headless
-Chromium (WASM, the cloud machine has no GPU), with the model files coming from the Hugging Face
-dataset (`huggingface.co` and `us.aws.cdn.hf.co`).
+Sections 1 to 3 ran against the local dev server. After the repository became public the same
+checks were repeated on <https://pbariskan.github.io/Prizma/>, with the model files coming from
+the Hugging Face dataset (`huggingface.co` and `us.aws.cdn.hf.co`): on 2026-11-12 in headless
+Chromium, and on 2026-11-13, on the build with the Safari fix, in headless Chromium again and in
+WebKit on a Mac. The cloud machine runs only Chromium and has no GPU, so Chromium means WASM here.
 
-- **The model loads in Chromium.** It is ready 13 to 17 s after the page opens with an empty
-  cache, at 0.4 to 0.6 s per token, with no console errors and no failed requests. Safari does
-  not: see [Known problems and not verified](#known-problems-and-not-verified).
+- **The model loads in Chromium.** It is ready 13 to 19 s after the page opens with an empty
+  cache, at 0.4 to 0.6 s per token, with no console errors and no failed requests.
+- **Safari did not load the model on the launch day, and its engine does since 2026-11-13.**
+  Safari on macOS showed the page and the precomputed example and then stopped with
+  `RangeError: Maximum call stack size exceeded`. The tokenizer's vocabulary did not fit on the
+  small stack WebKit gives a worker; cause and fix are in `docs/decisions.md` ("The vocabulary
+  is JSON text"). With the fix deployed, WebKit 27.2 driven by Playwright on a Mac (macOS 27,
+  Apple silicon) loads the model on its default backend (WebGPU), with `backend=wasm` and with
+  `backend=webgpu`, with no page errors. Generating both texts of the first example below takes
+  about 2 s on WebGPU and about 20 s in slow mode, and they match Chromium's word for word. The
+  first load took 100 to 125 s on that connection. Only the Steering view was driven in WebKit.
 - **Steering gives the same texts as locally.** "I think that you are" continues with "right. I
   think that you are right." and, with Weddings (12102) at 0.5x, with "going to be the bride of a
   big day." "The weather today is" continues with "a bit different than it was yesterday." and,
   with Space missions (16285) at 0.5x, with "getting closer to the sun, and the first ever mission
   to the Sun's closest approach ever is scheduled".
-- **The four views work.** The precomputed example can be explored while the model downloads.
-  On a generated text, Next word, Attention and Concepts open, pointing at a word previews it and
-  the panel returns to the selected word afterwards. "Steer with it" on a concept (" Paris" ->
-  "mentions of Paris", 9191) opens the Steering view and rewrites the text, and a click on a
-  steered word opens it in Concepts on the steered text.
-- **A share link restores the screen.** The link copied there (`vector=sae-9191`, `strength=0.5`,
-  `token=s16`, `view=concepts`, `concept=9191`) shows the same text, steering, word, view and
-  pinned concept in a fresh tab.
-- **The rest of the page.** An example start and the Enter key run the model, nothing scrolls
-  sideways at 390 px width, and the dark colour scheme renders.
+- **The four views work (Chromium).** The precomputed example can be explored while the model
+  downloads. On a generated text, Next word, Attention and Concepts open, pointing at a word
+  previews it and the panel returns to the selected word afterwards. "Steer with it" on a concept
+  (" Paris" -> "mentions of Paris", 9191) opens the Steering view and rewrites the text, and a
+  click on a steered word opens it in Concepts on the steered text.
+- **A share link restores the screen (Chromium).** The link copied there (`vector=sae-9191`,
+  `strength=0.5`, `token=s16`, `view=concepts`, `concept=9191`) shows the same text, steering,
+  word, view and pinned concept in a fresh tab.
+- **The rest of the page (Chromium).** An example start and the Enter key run the model, nothing
+  scrolls sideways at 390 px width, and the dark colour scheme renders.
 
-## Known problems and not verified
+## Not verified
 
-- **WebGPU on a real GPU.** The cloud machine has none. Open the site in Chrome on a laptop: the
-  header should say `WebGPU` and a token should take tens of milliseconds, not half a second.
-- **Safari does not load the model.** Reported on 2026-11-12 from Safari on macOS, on the live
-  site: the page and the precomputed example appear, then starting the model stops with
-  `RangeError: Maximum call stack size exceeded`. Everything in section 4 is Chromium only.
-  The likely cause was found the same day: the tokenizer ships the GPT-2 vocabulary as one array
-  literal with 50,256 entries, and JavaScriptCore needs more stack to build it than WebKit gives
-  a worker, so the worker stops before any model file is requested. A fix that ships the
-  vocabulary as JSON text is in pull request #6 (`docs/decisions.md` has the details once it is
-  merged). It has not been confirmed in Safari yet: Safari cannot be run on the cloud machine.
+- **The Safari app itself.** The check above drove Safari's engine through Playwright, not the
+  Safari app, and only the Steering view: Next word, Attention, Concepts and a share link were
+  not opened there.
+- **WebGPU in Chrome on a real GPU.** WebGPU ran on a real GPU only in WebKit on a Mac. In Chrome
+  on a laptop the header should say `WebGPU` and a token should take tens of milliseconds, not
+  half a second.
 - **Firefox.** Not run. It should fall back to WASM where WebGPU is missing.
 - **Touch.** Only the layout was checked at phone width. On a real phone a tap selects a word, and
   the candidate popup of the Steering view has no touch equivalent.
