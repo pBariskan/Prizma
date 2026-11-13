@@ -8,7 +8,7 @@ import { Engine, type EngineIO } from '../src/engine/engine'
 import type { WorkerResponse } from '../src/engine/protocol'
 
 const io: EngineIO = {
-  ort,
+  loadOrt: async () => ort,
   fetchText: (path) => readFile(path, 'utf8').catch((err) => (err.code === 'ENOENT' ? null : Promise.reject(err))),
   fetchBytes: async (path, onProgress) => {
     const bytes = new Uint8Array(await readFile(path)) // a copy, so the buffer starts at offset 0

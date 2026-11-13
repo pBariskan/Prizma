@@ -1,9 +1,9 @@
 /// <reference lib="webworker" />
 /**
  * The model runs here so the UI never freezes. This file only wires the engine (`engine.ts`) to
- * the worker: ONNX Runtime Web with WebGPU, downloads through the Cache API, and messages.
+ * the worker: ONNX Runtime Web, downloads through the Cache API, and messages.
  */
-import * as ort from 'onnxruntime-web/webgpu'
+import type * as Ort from 'onnxruntime-web'
 import { fetchWithCache } from './download'
 import { Engine } from './engine'
 import type { Backend, WorkerRequest, WorkerResponse } from './protocol'
@@ -22,9 +22,24 @@ async function detectBackend(): Promise<Backend> {
   }
 }
 
+/**
+ * Two builds of ONNX Runtime Web, each downloaded only when it is used. The WebGPU build is
+ * instrumented so that its WebAssembly can wait for the GPU (Asyncify), which makes it twice as
+ * large (29 MB instead of 15 MB). Slow mode runs on the plain WebAssembly build.
+ */
+const loadOrt = (backend: Backend): Promise<typeof Ort> =>
+  backend === 'webgpu' ? import('onnxruntime-web/webgpu') : import('onnxruntime-web/wasm')
+
+/** The stack of an error and of the errors that caused it, as text. */
+function stackOf(err: unknown): string | undefined {
+  const parts: string[] = []
+  for (let e = err; e instanceof Error && parts.length < 4; e = e.cause) parts.push(`${e.name}: ${e.message}\n${e.stack ?? ''}`)
+  return parts.length > 0 ? parts.join('\ncaused by: ') : undefined
+}
+
 const engine = new Engine(
   {
-    ort,
+    loadOrt,
     // Manifests are small and decide what else is fetched, so they always come from the network.
     fetchText: async (url) => {
       const res = await fetch(url, { cache: 'no-cache' })
@@ -53,7 +68,12 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
         await engine.generate(msg.requestId, msg.prompt, msg.maxNewTokens, msg.steer)
       }
     } catch (err) {
-      post({ type: 'error', requestId: msg.type === 'generate' ? msg.requestId : undefined, message: String(err) })
+      post({
+        type: 'error',
+        requestId: msg.type === 'generate' ? msg.requestId : undefined,
+        message: String(err),
+        stack: stackOf(err),
+      })
     }
   })
 }

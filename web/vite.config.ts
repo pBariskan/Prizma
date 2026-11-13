@@ -2,6 +2,7 @@ import { createReadStream, existsSync, statSync } from 'node:fs'
 import { extname, join, normalize, resolve } from 'node:path'
 import react from '@vitejs/plugin-react'
 import { defineConfig, type Plugin } from 'vite'
+import { vocabularyAsJson } from './scripts/vocabulary-as-json.ts'
 
 const ARTIFACTS_DIR = resolve(import.meta.dirname, '../artifacts')
 
@@ -36,11 +37,14 @@ function serveArtifacts(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), serveArtifacts()],
+  plugins: [react(), serveArtifacts(), vocabularyAsJson()],
   // GitHub Pages serves the site from /<repo>/, so the build sets VITE_BASE=/Prizma/.
   // Pages cannot send COOP/COEP headers, so the site does not rely on cross-origin isolation.
   base: process.env.VITE_BASE ?? '/',
   // onnxruntime-web locates its .wasm files relative to its own module; pre-bundling breaks that.
-  optimizeDeps: { exclude: ['onnxruntime-web'] },
-  worker: { format: 'es' },
+  // gpt-tokenizer stays out of pre-bundling so that vocabularyAsJson also sees it in development.
+  optimizeDeps: { exclude: ['onnxruntime-web', 'gpt-tokenizer'] },
+  // The model runs in a worker, and worker bundles have their own plugin list: without
+  // vocabularyAsJson in it the model does not load in Safari.
+  worker: { format: 'es', plugins: () => [vocabularyAsJson()] },
 })
