@@ -45,12 +45,13 @@ The model is split at the residual stream entering block 6 (`blocks.6.hook_resid
    `part_b.onnx` does not contain it: the graph points at `embeddings.f16.bin` as ONNX external
    data (`manifest.external_data`) and the worker passes the bytes it already downloaded.
 
-Runtime: ONNX Runtime Web with WebGPU, WASM fallback. The transformer blocks are 8-bit
-block-quantized (`MatMulNBits`, asymmetric); the unembedding is never quantized (it is the one
-matrix where 8 bits visibly change the predictions). ~180 MB total, plus 38 MB for the SAE encoder
-(downloaded after the model is usable). MVP has no KV cache: sequences are capped at 64 tokens
-(BOS included) and the full sequence is re-run for every new token. When a run finishes, one more
-pass returns the candidates at every position and all attention patterns.
+Runtime: ONNX Runtime Web with WebGPU, WASM fallback (two builds of the runtime, each downloaded
+only when it is used). The transformer blocks are 8-bit block-quantized (`MatMulNBits`,
+asymmetric); the unembedding is never quantized (it is the one matrix where 8 bits visibly change
+the predictions). ~180 MB total, plus 38 MB for the SAE encoder (downloaded after the model is
+usable). MVP has no KV cache: sequences are capped at 64 tokens (BOS included) and the full
+sequence is re-run for every new token. When a run finishes, one more pass returns the candidates
+at every position and all attention patterns.
 
 ## Commands
 
@@ -109,6 +110,11 @@ cache busting.
   `src/engine/engine.ts`, which has no browser dependencies: `model.worker.ts` hosts it in the
   browser and `scripts/node-engine.ts` in Node (demo export, end-to-end test). Pure math lives in
   small modules (`steering.ts`, `embeddings.ts`, `sae.ts`) with Vitest tests.
+- Safari gives a Web Worker about 512 KB of stack, and its engine spends 8 bytes of it on every entry
+  of an array literal that holds anything but constants. Nothing large goes into the worker as a
+  literal: the tokenizer's vocabulary is rewritten to JSON text at build time
+  (`scripts/vocabulary-as-json.ts`, in `plugins` and in `worker.plugins`). The cloud machine runs
+  Chromium only, so a browser check from there is a Chromium check and is reported as one.
 - The UI keeps what is on screen in the URL (`src/state/share.ts`); a new piece of view state
   that should survive a share link goes there.
 - The page is one sheet with four views, one on screen at a time. Each view has one colour

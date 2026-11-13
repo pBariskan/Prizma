@@ -10,7 +10,11 @@ export class ModelClient {
   private loadRequested = false
 
   constructor() {
-    this.worker.onmessage = (e: MessageEvent<WorkerResponse>) => this.listeners.forEach((l) => l(e.data))
+    this.worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
+      // The page shows one line; the console keeps where it happened, for bug reports.
+      if (e.data.type === 'error' && e.data.stack) console.error(`[model worker] ${e.data.stack}`)
+      this.listeners.forEach((l) => l(e.data))
+    }
     this.worker.onerror = (e) => this.listeners.forEach((l) => l({ type: 'error', message: e.message }))
   }
 

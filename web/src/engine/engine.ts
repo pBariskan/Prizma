@@ -35,7 +35,11 @@ import {
 
 /** Everything the engine needs from its host. */
 export interface EngineIO {
-  ort: typeof Ort
+  /**
+   * ONNX Runtime for one backend. The browser ships two builds: the WebGPU one, and a plain
+   * WebAssembly one that is half the size and does not carry the WebGPU build's async machinery.
+   */
+  loadOrt(backend: Backend): Promise<typeof Ort>
   /** Text of a small file, always fresh; null when it does not exist. */
   fetchText(url: string): Promise<string | null>
   /** Bytes of a large file. `version` changes when the content behind the URL changes. */
@@ -60,9 +64,13 @@ interface FinishedRun {
 
 const pause = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
 
+/** An error as one line of text, without the `Error: ` prefix of our own messages. */
+const describe = (err: unknown) => String(err).replace(/^Error: /, '')
+
 export class Engine {
   private readonly io: EngineIO
   private readonly emit: Emit
+  private ort!: typeof Ort
   private partA!: Ort.InferenceSession
   private partB!: Ort.InferenceSession
   private manifest!: Manifest
@@ -84,7 +92,6 @@ export class Engine {
   /** Downloads the model and creates the ONNX sessions. Emits `progress`, then `ready`. */
   async load(baseUrl: string, forced?: Backend, saeFolder = 'sae'): Promise<void> {
     const t0 = performance.now()
-    const { ort } = this.io
     const root = baseUrl.replace(/\/$/, '')
     const manifestText = await this.io.fetchText(`${root}/manifest.json`)
     const steeringText = await this.io.fetchText(`${root}/steering.json`)
@@ -119,11 +126,7 @@ export class Engine {
     const bytesA = await download(files.part_a, 'Downloading model (part A)')
     const bytesB = await download(files.part_b, 'Downloading model (part B)')
 
-    // Multi-threaded WASM deadlocks when ORT is bundled inside our own module worker (its pthreads
-    // re-import this file). Single-threaded until that is solved; WebGPU is the main path anyway.
-    ort.env.wasm.numThreads = 1
     let backend = forced ?? (await this.io.detectBackend())
-    this.emit({ type: 'progress', loaded: total, total, label: `Starting the model on ${backend.toUpperCase()}` })
     // Part B has no unembedding matrix of its own: GPT-2 ties it to the token embeddings, so the
     // graph points at the embedding table and ONNX Runtime gets the bytes that are already here.
     const external = (part: 'part_a' | 'part_b') =>
@@ -132,21 +135,43 @@ export class Engine {
         if (!data) throw new Error(`${part} needs ${path}, which is not one of the downloaded files`)
         return { path, data }
       })
-    const create = (model: Uint8Array, part: 'part_a' | 'part_b') =>
-      ort.InferenceSession.create(model, {
-        executionProviders: [backend],
-        graphOptimizationLevel: 'all',
-        externalData: external(part),
-      })
+    const start = async (on: Backend) => {
+      this.emit({ type: 'progress', loaded: total, total, label: `Starting the model on ${on.toUpperCase()}` })
+      let step = 'loading ONNX Runtime'
+      try {
+        const ort = await this.io.loadOrt(on)
+        // Multi-threaded WASM deadlocks when ORT is bundled inside our own module worker (its
+        // pthreads re-import this file). Single-threaded until that is solved.
+        ort.env.wasm.numThreads = 1
+        const create = (model: Uint8Array, part: 'part_a' | 'part_b') =>
+          ort.InferenceSession.create(model, {
+            executionProviders: [on],
+            graphOptimizationLevel: 'all',
+            externalData: external(part),
+          })
+        step = 'part A'
+        const partA = await create(bytesA, 'part_a')
+        step = 'part B'
+        const partB = await create(bytesB, 'part_b').catch(async (err) => {
+          await partA.release().catch(() => {})
+          throw err
+        })
+        this.ort = ort
+        this.partA = partA
+        this.partB = partB
+      } catch (err) {
+        throw new Error(`${on.toUpperCase()} could not start the model (${step}): ${describe(err)}`, { cause: err })
+      }
+    }
     try {
-      this.partA = await create(bytesA, 'part_a')
-      this.partB = await create(bytesB, 'part_b')
+      await start(backend)
     } catch (err) {
       if (backend === 'wasm') throw err
-      console.warn('WebGPU session failed, falling back to WASM', err)
+      // WebGPU is there but this model does not run on it (driver, memory, browser): slow mode.
       backend = 'wasm'
-      this.partA = await create(bytesA, 'part_a')
-      this.partB = await create(bytesB, 'part_b')
+      await start('wasm').catch((second) => {
+        throw new Error(`${describe(second)}. Before that: ${describe(err)}`, { cause: second })
+      })
     }
     this.emit({
       type: 'ready',
@@ -304,7 +329,7 @@ export class Engine {
    * the residual that part B received.
    */
   private async forward(ids: number[], direction: Float32Array | null, scale: number, full: boolean) {
-    const { ort } = this.io
+    const ort = this.ort
     const T = ids.length
     const d = this.manifest.d_model
     const tokEmbeds = new ort.Tensor('float32', lookupEmbeddings(this.embeddings, ids, d), [1, T, d])

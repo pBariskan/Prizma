@@ -2,6 +2,63 @@
 
 Short records of choices that are not obvious from the code. Newest first.
 
+## 2026-11-12: The vocabulary is JSON text (the model did not load in Safari)
+
+On the day the site went live it failed in Safari on a Mac: "Could not load the model gpt2-l6:
+RangeError: Maximum call stack size exceeded." It worked in Chromium, which is the only browser the
+cloud machine can run, so every check before the launch had passed.
+
+**Cause.** The error came from loading the worker's own code, before a single model file was
+requested. `gpt-tokenizer` ships the GPT-2 vocabulary as one array literal: 50,256 entries, 344 of
+them nested arrays of numbers (tokens that are not valid text on their own). Safari's engine,
+JavaScriptCore, builds an array literal that contains anything other than constants with one stack
+slot per entry: 8 bytes each, measured (a literal of this kind loads up to about 46,000 entries
+with a 512 KB stack and up to about 112,000 with 1 MB). The vocabulary therefore needs about
+400 KB of stack. WebKit gives a Web Worker about 512 KB (a recursion test reached depth 4,200 in a
+worker and 73,000 on the page), and the rest of the module evaluation does not fit beside it. The
+same bundle loads on the page, and in Chromium and Firefox, whose engines build the literal on the
+heap. An array of strings only, or `JSON.parse` of the same text, needs no stack in any engine.
+
+**Fix.** A small Vite plugin (`web/scripts/vocabulary-as-json.ts`) rewrites the vocabulary module
+to `export default JSON.parse("...")` of its own value. Nothing else changes: same package, same
+data, one bundle. The plugin is in `plugins` and also in `worker.plugins`, because Vite builds
+worker bundles with their own plugin list, and `gpt-tokenizer` is excluded from dependency
+pre-bundling so that the development server serves the rewritten module too. A test holds all
+three, and fails if the package grows another large module that the plugin does not cover.
+
+Not chosen: tokenizing on the page (everything that touches the model stays in the worker), a
+second network request for a vocabulary file (one more thing to cache and to fail), another
+tokenizer package (same data, and the next one could ship it the same way).
+
+**How to reproduce without a Mac.** Bun runs on JavaScriptCore. With the main thread's stack set to
+the size of a WebKit worker's, importing the built worker bundle shows the same error:
+
+```bash
+cd web && npm run build
+(ulimit -s 512; bun -e 'const fs = require("fs"); await import("./dist/assets/" + fs.readdirSync("dist/assets").find((f) => f.startsWith("model.worker-"))); console.log("loaded"); process.exit(0)')
+```
+
+It throws `RangeError: Maximum call stack size exceeded.` on a build without the plugin and prints
+`loaded` with it (down to a 192 KB stack). This checks that the worker's code loads, not that the
+model runs: ONNX Runtime was checked separately, both builds create and run the two sessions in
+JavaScriptCore with a 512 KB and a 256 KB stack.
+
+**Checked in WebKit before the merge.** Playwright's WebKit 27.2 on a Mac (macOS 27, Apple
+silicon) opened the live site with the same rewrite applied to its worker script on the fly. The
+unchanged site failed as before. With the rewrite the model loaded on the default backend (WebGPU),
+with `backend=wasm` and with `backend=webgpu`, and both texts matched Chromium's word for word
+(2 s to generate both on WebGPU, 21 s in slow mode).
+
+**In the same change.** The engine now loads ONNX Runtime Web on demand, in the build that fits the
+backend: slow mode runs on the plain WebAssembly build (15 MB) instead of the WebGPU build, whose
+WebAssembly is instrumented to wait for the GPU and is twice as large (29 MB). This was first
+suspected as the cause and is not; it stays because slow mode downloads half as much. An error
+while the model starts names the backend and the step, and the worker's error stack goes to the
+page console (`[model worker] ...`).
+
+**What it taught.** A check in Chromium says nothing about Safari, and reports must say which
+browser was run. Nothing large goes into the worker as an array or object literal.
+
 ## 2026-11-12: Public repository, live site, dataset address in the workflow
 
 Poyri made the repository public and switched GitHub Pages on (source: GitHub Actions). The site
